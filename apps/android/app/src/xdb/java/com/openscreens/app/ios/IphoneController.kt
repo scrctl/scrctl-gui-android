@@ -145,7 +145,6 @@ internal class IphoneController(private val context: Context) {
             val udid = item.optString("udid")
             if (udid.isBlank()) null else NearbyDevice.Iphone(
                 udid, item.optString("name").replace(udid, "").trim().ifBlank { "iPhone" },
-                item.optString("pairing"),
             )
         }.distinctBy { it.udid }
         val warnings = response.optJSONArray("warnings")

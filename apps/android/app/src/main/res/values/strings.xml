@@ -337,6 +337,6 @@
     <string name="iphone_pair">Pair an iPhone over Wi-Fi</string>
     <string name="iphone_cancel">Cancel</string>
     <string name="iphone_pin">Enter this code on the iPhone: %1$s</string>
-    <string name="iphone_device_type">iPhone</string>
+    <string name="library_nearby_screen_mirroring">Screen Mirroring</string>
     <string name="iphone_prepare">Prepare Developer Disk Image</string>
 </resources>

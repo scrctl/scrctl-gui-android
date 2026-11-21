@@ -335,6 +335,6 @@
     <string name="iphone_pair">通过 Wi-Fi 配对 iPhone</string>
     <string name="iphone_cancel">取消</string>
     <string name="iphone_pin">在 iPhone 上输入此验证码：%1$s</string>
-    <string name="iphone_device_type">iPhone</string>
+    <string name="library_nearby_screen_mirroring">屏幕镜像</string>
     <string name="iphone_prepare">准备开发者磁盘映像</string>
 </resources>

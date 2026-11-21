@@ -220,8 +220,10 @@ internal fun LibraryScreen(
         filtered.sortedForLibrary(sort)
     }
 
+    val mirroring = stringResource(R.string.library_nearby_screen_mirroring)
     val visibleNearby = nearby.filter { device ->
-        device.name.contains(query, ignoreCase = true) || device.detail.contains(query, ignoreCase = true)
+        device.name.contains(query, ignoreCase = true) ||
+            device.subtitle(mirroring).contains(query, ignoreCase = true)
     }
     val showingSearch = searchActive
     Scaffold(
@@ -960,15 +962,14 @@ private fun ConnectionCard(
 
     Box {
     ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { menuExpanded = true },
-            ),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true }),
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1089,17 +1090,13 @@ private fun ConnectionRow(
 
     Box {
     ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { menuExpanded = true },
-            ),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1349,6 +1346,11 @@ private fun NearbyEmpty(
     }
 }
 
+private fun NearbyDevice.subtitle(mirroring: String): String = when (this) {
+    is NearbyDevice.Vnc -> server.address
+    is NearbyDevice.Iphone -> mirroring
+}
+
 @Composable
 private fun NearbyRow(
     device: NearbyDevice,
@@ -1358,12 +1360,14 @@ private fun NearbyRow(
 ) {
     val gradient = autoAccent(device.name).gradient
     val description = stringResource(R.string.library_nearby_open, device.name)
+    val subtitle = device.subtitle(stringResource(R.string.library_nearby_screen_mirroring))
 
     ElevatedCard(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
+        enabled = enabled,
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(
@@ -1400,9 +1404,9 @@ private fun NearbyRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = device.detail.ifBlank { stringResource(R.string.iphone_device_type) },
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = if (device is NearbyDevice.Vnc) FontFamily.Monospace else null,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
