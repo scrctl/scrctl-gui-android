@@ -1363,16 +1363,14 @@ private fun NearbyRow(
     val subtitle = device.subtitle(stringResource(R.string.library_nearby_screen_mirroring))
 
     ElevatedCard(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = description },
-        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics { contentDescription = description }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
