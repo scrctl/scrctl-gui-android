@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenScreens</string>
+    <string name="app_name">Scrctl</string>
 
     <!-- 连接库 -->
     <string name="library_title">设备</string>

@@ -17,12 +17,12 @@ class UpdateDownloadHttpException(val statusCode: Int) :
 class ApkUpdater(private val context: Context) {
     suspend fun download(url: String): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-        val target = File(directory, "OpenScreens-update.apk")
+        val target = File(directory, "ScrctlGui-update.apk")
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 60_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "OpenScreens-Android")
+            setRequestProperty("User-Agent", "ScrctlGui-Android")
         }
         try {
             val code = connection.responseCode

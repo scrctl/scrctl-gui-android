@@ -2646,9 +2646,9 @@ private fun writeScreenshot(context: Context, bitmap: Bitmap): Uri {
     }
     val resolver = context.contentResolver
     val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "OpenScreens-${System.currentTimeMillis()}.png")
+        put(MediaStore.Images.Media.DISPLAY_NAME, "Scrctl-${System.currentTimeMillis()}.png")
         put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OpenScreens")
+        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Scrctl")
         put(MediaStore.Images.Media.IS_PENDING, 1)
     }
     val uri = resolver.insert(

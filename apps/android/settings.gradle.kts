@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenScreensAndroid"
+rootProject.name = "ScrctlGui"
 include(":app")

@@ -54,7 +54,7 @@ object UpdateChecker {
             connectTimeout = 10_000
             readTimeout = 15_000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "OpenScreens-Android")
+            setRequestProperty("User-Agent", "ScrctlGui-Android")
         }
         try {
             val code = connection.responseCode
