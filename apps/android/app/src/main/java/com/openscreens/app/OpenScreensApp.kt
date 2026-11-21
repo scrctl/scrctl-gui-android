@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openscreens.app.data.Connection
 import com.openscreens.app.data.ThemeMode
+import com.openscreens.app.ios.iphoneLauncher
 import com.openscreens.app.ui.editor.ConnectionEditorScreen
 import com.openscreens.app.ui.library.LibraryScreen
 import com.openscreens.app.ui.session.SessionScreen
@@ -80,6 +81,7 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                         },
                         onAddConnection = { viewModel.navigate(Route.Editor(connectionId = null)) },
                         onEditConnection = { viewModel.navigate(Route.Editor(it.id)) },
+                        onOpenIphone = iphoneLauncher(context),
                         onOpenSettings = { viewModel.navigate(Route.Settings) },
                         onQuickConnect = { host, port, username ->
                             viewModel.openEndpoint(Connection(name = host, host = host, port = port, username = username.orEmpty()))

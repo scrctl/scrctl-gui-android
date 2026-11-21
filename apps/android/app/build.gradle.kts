@@ -26,9 +26,17 @@ val buildVersion = runCatching {
     }.standardOutput.asText.get().trim()
 }.getOrNull().orEmpty().ifBlank { "dev" }
 
+val xdbEnabled = providers.gradleProperty("scrctl.xdb").map(String::toBoolean).getOrElse(false)
+val repositoryRoot = rootProject.file("../..")
+val rustAbis = if (xdbEnabled) listOf("arm64-v8a") else listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val xdbOutput = layout.projectDirectory.dir("build/xdb")
+val rustLibraries = if (xdbEnabled) xdbOutput.dir("jniLibs").asFile
+    else layout.projectDirectory.dir("src/main/jniLibs").asFile
+
 android {
     namespace = "com.openscreens.app"
     compileSdk = 36
+    if (xdbEnabled) ndkVersion = "29.0.14206865"
 
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -41,8 +49,27 @@ android {
         versionName = providers.gradleProperty("openscreens.versionName").getOrElse("0.1.0")
         buildConfigField("String", "BUILD_VERSION", "\"$buildVersion\"")
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        ndk { abiFilters += rustAbis }
+    }
+
+    sourceSets["main"].apply {
+        if (xdbEnabled) {
+            java.srcDirs(
+                "src/xdb/java",
+                xdbOutput.dir("bindings"),
+                repositoryRoot.resolve("android-common/java"),
+                repositoryRoot.resolve("xdb/android/src/main/java"),
+            )
+            jniLibs.setSrcDirs(listOf(rustLibraries, repositoryRoot.resolve("app/build/native-libs")))
+            assets.srcDir(repositoryRoot.resolve("app/build/native-assets"))
+        } else {
+            java.srcDir("src/vnc/java")
+        }
+    }
+
+    buildTypes.configureEach {
+        if (xdbEnabled) {
+            sourceSets[name].manifest.srcFile("src/xdb/AndroidManifest.xml")
         }
     }
 
@@ -58,6 +85,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (xdbEnabled) applicationIdSuffix = ".xdb.debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -85,13 +115,18 @@ android {
     }
 }
 
-val nativeLibraries = listOf("arm64-v8a", "armeabi-v7a", "x86_64").map {
-    layout.projectDirectory.file("src/main/jniLibs/$it/librfb_ffi.so").asFile
-}
+val nativeLibraries = rustAbis.map { rustLibraries.resolve("$it/librfb_ffi.so") } + if (xdbEnabled) {
+    listOf("libxdb_client.so", "libxdb_server.so", "libscrctl_jni.so", "libc++_shared.so",
+        "libavcodec.so", "libavutil.so", "libswscale.so").map {
+        repositoryRoot.resolve("app/build/native-libs/arm64-v8a/$it")
+    }
+} else emptyList()
 tasks.named("preBuild") {
     doFirst {
-        check(nativeLibraries.all { it.isFile }) {
-            "Build the Android core with ./scripts/build-android-core.sh before running Gradle."
+        val missing = nativeLibraries.filterNot { it.isFile }
+        check(missing.isEmpty()) {
+            val command = if (xdbEnabled) "./scripts/build-android-core.sh --xdb" else "./scripts/build-android-core.sh"
+            "Run $command before running Gradle. Missing native libraries: ${missing.joinToString()}"
         }
     }
 }

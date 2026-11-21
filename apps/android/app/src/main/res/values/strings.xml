@@ -332,4 +332,13 @@
     <string name="session_mac_choice_hint">Another user is signed in on this Mac. Open a personal session with your Mac account, or ask to share the active session.</string>
     <string name="session_mac_personal">Open Personal Session</string>
     <string name="session_mac_share">Request Shared Session</string>
+    <string name="library_iphone">iPhone mirroring</string>
+    <string name="iphone_back">Back</string>
+    <string name="iphone_refresh">Refresh</string>
+    <string name="iphone_pair">Pair over Wi-Fi</string>
+    <string name="iphone_cancel">Cancel</string>
+    <string name="iphone_pin">Enter this code on the iPhone: %1$s</string>
+    <string name="iphone_no_devices">No iPhones found over Wi-Fi.</string>
+    <string name="iphone_mirror">Mirror</string>
+    <string name="iphone_prepare">Prepare Developer Disk Image</string>
 </resources>

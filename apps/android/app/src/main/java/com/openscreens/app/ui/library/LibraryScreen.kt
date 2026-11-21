@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PhoneIphone
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Settings
@@ -163,6 +164,7 @@ internal fun LibraryScreen(
     onAddConnection: () -> Unit,
     onEditConnection: (Connection) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenIphone: (() -> Unit)? = null,
     onQuickConnect: (host: String, port: Int, username: String?) -> Unit,
     onOpenNearby: (NearbyServer) -> Unit,
 ) {
@@ -283,6 +285,11 @@ internal fun LibraryScreen(
                                     imageVector = Icons.Outlined.Search,
                                     contentDescription = stringResource(R.string.library_search),
                                 )
+                            }
+                        }
+                        onOpenIphone?.let {
+                            IconButton(onClick = it) {
+                                Icon(Icons.Outlined.PhoneIphone, stringResource(R.string.library_iphone))
                             }
                         }
                         IconButton(onClick = onAddConnection) {
@@ -1204,6 +1211,7 @@ private fun NearbyContent(
     discoveryEnabled: Boolean,
     onOpen: (NearbyServer) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenIphone: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     when {
