@@ -55,7 +55,6 @@
     <string name="library_nearby_off_title">Nearby discovery is off</string>
     <string name="library_nearby_off_body">Turn on discovery in Settings to find devices on your local network.</string>
     <string name="library_nearby_off_action">Open Settings</string>
-    <string name="library_nearby_open">Open %1$s</string>
 
     <!-- Connection editor -->
     <string name="editor_new_title">New connection</string>

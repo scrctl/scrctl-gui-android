@@ -55,7 +55,6 @@
     <string name="library_nearby_off_title">附近发现已关闭</string>
     <string name="library_nearby_off_body">在设置中开启发现，即可查找本地网络中的设备。</string>
     <string name="library_nearby_off_action">打开设置</string>
-    <string name="library_nearby_open">打开 %1$s</string>
 
     <!-- 连接编辑器 -->
     <string name="editor_new_title">新建连接</string>

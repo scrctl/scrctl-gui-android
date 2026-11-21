@@ -95,8 +95,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -962,14 +960,15 @@ private fun ConnectionCard(
 
     Box {
     ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { menuExpanded = true },
+            ),
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true }),
-        ) {
+        Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1090,13 +1089,17 @@ private fun ConnectionRow(
 
     Box {
     ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { menuExpanded = true },
+            ),
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1359,18 +1362,17 @@ private fun NearbyRow(
     onPrepare: (() -> Unit)?,
 ) {
     val gradient = autoAccent(device.name).gradient
-    val description = stringResource(R.string.library_nearby_open, device.name)
     val subtitle = device.subtitle(stringResource(R.string.library_nearby_screen_mirroring))
 
     ElevatedCard(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = enabled, onClick = onClick)
-                .semantics { contentDescription = description }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
