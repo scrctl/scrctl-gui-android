@@ -30,6 +30,10 @@ val xdbEnabled = providers.gradleProperty("scrctl.xdb").map(String::toBoolean).g
 val repositoryRoot = rootProject.file("../..")
 val rustAbis = if (xdbEnabled) listOf("arm64-v8a") else listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 val xdbOutput = layout.projectDirectory.dir("build/xdb")
+val xdbLibraries = listOf(
+    "libxdb_client.so", "libxdb_server.so", "libscrctl_jni.so", "libc++_shared.so",
+    "libavcodec.so", "libavutil.so", "libswscale.so",
+)
 val rustLibraries = if (xdbEnabled) xdbOutput.dir("jniLibs").asFile
     else layout.projectDirectory.dir("src/main/jniLibs").asFile
 
@@ -112,12 +116,15 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         jniLibs.useLegacyPackaging = true
+        if (xdbEnabled) {
+            // native-build.json records the hashes of these exact shared libraries.
+            jniLibs.keepDebugSymbols += xdbLibraries.map { "**/$it" }
+        }
     }
 }
 
 val nativeLibraries = rustAbis.map { rustLibraries.resolve("$it/librfb_ffi.so") } + if (xdbEnabled) {
-    listOf("libxdb_client.so", "libxdb_server.so", "libscrctl_jni.so", "libc++_shared.so",
-        "libavcodec.so", "libavutil.so", "libswscale.so").map {
+    xdbLibraries.map {
         repositoryRoot.resolve("app/build/native-libs/arm64-v8a/$it")
     }
 } else emptyList()
