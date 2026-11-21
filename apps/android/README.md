@@ -28,9 +28,9 @@ cd apps/android
 ./gradlew -Pscrctl.xdb=true :app:assembleDebug :app:testDebugUnitTest
 ```
 
-Open **iPhone mirroring** from the library toolbar to discover or pair an iPhone
-over Wi-Fi. If necessary, prepare the Developer Disk Image before opening the
-mirror. Tap or drag inside the image to control the iPhone. Android Back closes
+Open **Nearby** to find iPhones and computers on the local network. Use the
+Nearby menu for discovery refresh or new Wi-Fi pairing. If necessary, prepare
+the Developer Disk Image from the device menu. Select the device to mirror. Tap or drag inside the image to control the iPhone. Android Back closes
 the session. The XDB debug build uses `org.scrctl.android.xdb.debug`, with its
 own pairing records, and can coexist with the existing installation.
 

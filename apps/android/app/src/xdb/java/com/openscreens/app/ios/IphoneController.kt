@@ -2,6 +2,7 @@ package com.openscreens.app.ios
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.openscreens.app.data.NearbyDevice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -9,6 +10,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import org.scrctl.android.Geometry
 import org.scrctl.android.NativeBridge
@@ -20,9 +23,8 @@ import uniffi.rfb_ffi.IosTransport
 import uniffi.rfb_ffi.iosListDevices
 import java.io.File
 
-internal data class Iphone(val udid: String, val name: String, val pairing: String)
 internal data class IphoneState(
-    val devices: List<Iphone> = emptyList(),
+    val devices: List<NearbyDevice.Iphone> = emptyList(),
     val busy: Boolean = false,
     val canCancel: Boolean = false,
     val mirroring: Boolean = false,
@@ -34,6 +36,7 @@ internal data class IphoneState(
 internal class IphoneController(private val context: Context) {
     private val mutableState = MutableStateFlow(IphoneState())
     val state = mutableState.asStateFlow()
+    private val operations = Mutex()
     private val requestLock = Any()
     private var request: Pair<Long, Long>? = null
     private val input = ArrayDeque<Touch>()
@@ -63,7 +66,7 @@ internal class IphoneController(private val context: Context) {
         refresh(port)
     }
 
-    suspend fun prepare(device: Iphone) = operation { runtime, _ ->
+    suspend fun prepare(device: NearbyDevice.Iphone) = operation { runtime, _ ->
         val cache = File(context.cacheDir, "ddi").apply { mkdirs() }
         request(runtime, "ddi.prepare", JSONObject()
             .put("udid", device.udid)
@@ -72,7 +75,7 @@ internal class IphoneController(private val context: Context) {
         mutableState.value = mutableState.value.copy(message = "DDI prepared")
     }
 
-    suspend fun mirror(device: Iphone, onFrame: (VideoFrame) -> Boolean) = operation { _, port ->
+    suspend fun mirror(device: NearbyDevice.Iphone, onFrame: (VideoFrame) -> Boolean) = operation { _, port ->
         synchronized(input) { input.clear() }
         IosSession.open(port, device.udid, IosTransport.WIFI, false).use { session ->
             var failure: Throwable? = null
@@ -110,25 +113,27 @@ internal class IphoneController(private val context: Context) {
         }
     }
 
-    private suspend fun operation(block: suspend (Long, UShort) -> Unit) = withContext(Dispatchers.IO) {
-        mutableState.value = mutableState.value.copy(busy = true, message = null)
-        try {
-            val directory = File(context.filesDir, "xdb").apply { mkdirs() }
-            val runtime = NativeBridge.start(context, directory.absolutePath)
-            AutoCloseable { NativeBridge.stop(runtime) }.use {
-                val port = NativeBridge.port(runtime)
-                check(port in 1..65535) { "XDB server did not report a valid port" }
-                currentCoroutineContext().ensureActive()
-                block(runtime, port.toUShort())
+    private suspend fun operation(block: suspend (Long, UShort) -> Unit) = operations.withLock {
+        withContext(Dispatchers.IO) {
+            mutableState.value = mutableState.value.copy(busy = true, message = null)
+            try {
+                val directory = File(context.filesDir, "xdb").apply { mkdirs() }
+                val runtime = NativeBridge.start(context, directory.absolutePath)
+                AutoCloseable { NativeBridge.stop(runtime) }.use {
+                    val port = NativeBridge.port(runtime)
+                    check(port in 1..65535) { "XDB server did not report a valid port" }
+                    currentCoroutineContext().ensureActive()
+                    block(runtime, port.toUShort())
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mutableState.value = mutableState.value.copy(message = error.message ?: error.javaClass.simpleName)
+            } catch (error: LinkageError) {
+                mutableState.value = mutableState.value.copy(message = error.message ?: "Could not load XDB")
+            } finally {
+                mutableState.value = mutableState.value.copy(busy = false, canCancel = false, mirroring = false, hasFrame = false, pin = null)
             }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            mutableState.value = mutableState.value.copy(message = error.message ?: error.javaClass.simpleName)
-        } catch (error: LinkageError) {
-            mutableState.value = mutableState.value.copy(message = error.message ?: "Could not load XDB")
-        } finally {
-            mutableState.value = mutableState.value.copy(busy = false, canCancel = false, mirroring = false, hasFrame = false, pin = null)
         }
     }
 
@@ -138,7 +143,10 @@ internal class IphoneController(private val context: Context) {
         val devices = (0 until array.length()).mapNotNull { index ->
             val item = array.getJSONObject(index)
             val udid = item.optString("udid")
-            if (udid.isBlank()) null else Iphone(udid, item.optString("name"), item.optString("pairing"))
+            if (udid.isBlank()) null else NearbyDevice.Iphone(
+                udid, item.optString("name").replace(udid, "").trim().ifBlank { "iPhone" },
+                item.optString("pairing"),
+            )
         }.distinctBy { it.udid }
         val warnings = response.optJSONArray("warnings")
         val message = warnings?.let { list ->

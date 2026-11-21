@@ -50,10 +50,10 @@
     <string name="library_tab_library">连接库</string>
     <string name="library_nearby_title">附近</string>
     <string name="library_nearby_count">附近 %1$d 台</string>
-    <string name="library_nearby_empty_title">附近没有电脑</string>
-    <string name="library_nearby_empty_body">在此网络中共享屏幕的电脑会显示在这里。</string>
+    <string name="library_nearby_empty_title">附近没有设备</string>
+    <string name="library_nearby_empty_body">在此网络中共享屏幕的设备会显示在这里。</string>
     <string name="library_nearby_off_title">附近发现已关闭</string>
-    <string name="library_nearby_off_body">在设置中开启发现，即可查找本地网络中的电脑。</string>
+    <string name="library_nearby_off_body">在设置中开启发现，即可查找本地网络中的设备。</string>
     <string name="library_nearby_off_action">打开设置</string>
     <string name="library_nearby_open">打开 %1$s</string>
 
@@ -264,8 +264,8 @@
     <string name="settings_show_session_previews">显示上次会话预览</string>
     <string name="settings_show_session_previews_hint">预览仅保存在此设备。</string>
     <string name="settings_library">连接库</string>
-    <string name="settings_discover_nearby">自动发现附近电脑</string>
-    <string name="settings_discover_nearby_hint">使用 Bonjour 查找本地网络中共享屏幕的电脑。</string>
+    <string name="settings_discover_nearby">自动发现附近设备</string>
+    <string name="settings_discover_nearby_hint">查找本地网络中可连接的设备。</string>
     <string name="settings_ssh_keys">SSH 密钥</string>
     <string name="settings_ssh_keys_count">已保存 %1$d 个</string>
     <string name="settings_manage">管理</string>
@@ -330,4 +330,11 @@
     <string name="session_mac_choice_hint">此 Mac 上已有其他用户登录。可使用你的 Mac 账户打开个人会话，或请求共享当前会话。</string>
     <string name="session_mac_personal">打开个人会话</string>
     <string name="session_mac_share">请求共享会话</string>
+    <string name="iphone_back">返回</string>
+    <string name="iphone_refresh">刷新 iPhone</string>
+    <string name="iphone_pair">通过 Wi-Fi 配对 iPhone</string>
+    <string name="iphone_cancel">取消</string>
+    <string name="iphone_pin">在 iPhone 上输入此验证码：%1$s</string>
+    <string name="iphone_device_type">iPhone</string>
+    <string name="iphone_prepare">准备开发者磁盘映像</string>
 </resources>

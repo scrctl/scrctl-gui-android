@@ -110,8 +110,9 @@ import com.openscreens.app.data.Connection
 import com.openscreens.app.data.ConnectionGroup
 import com.openscreens.app.data.ConnectionPreviewStore
 import com.openscreens.app.data.LibrarySortOrder
-import com.openscreens.app.data.NearbyServer
+import com.openscreens.app.data.NearbyDevice
 import com.openscreens.app.data.sortedForLibrary
+import com.openscreens.app.ios.IphoneIntegration
 import com.openscreens.app.ui.theme.ThemedSystemBarIcons
 import com.openscreens.app.ui.theme.autoAccent
 import com.openscreens.app.ui.theme.gradient
@@ -150,7 +151,8 @@ internal fun LibraryScreen(
     previews: ConnectionPreviewStore,
     onDeleteConnection: (String) -> Boolean,
     groups: List<ConnectionGroup>,
-    nearby: List<NearbyServer>,
+    nearby: List<NearbyDevice>,
+    iphone: IphoneIntegration?,
     discoverNearby: Boolean,
     sort: LibrarySortOrder,
     onSortChange: (LibrarySortOrder) -> Unit,
@@ -164,9 +166,8 @@ internal fun LibraryScreen(
     onAddConnection: () -> Unit,
     onEditConnection: (Connection) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenIphone: (() -> Unit)? = null,
     onQuickConnect: (host: String, port: Int, username: String?) -> Unit,
-    onOpenNearby: (NearbyServer) -> Unit,
+    onOpenNearby: (NearbyDevice) -> Unit,
 ) {
     ThemedSystemBarIcons()
     val previewState by previews.state.collectAsStateWithLifecycle()
@@ -219,7 +220,10 @@ internal fun LibraryScreen(
         filtered.sortedForLibrary(sort)
     }
 
-    val showingSearch = searchActive && tab == LibraryTab.Library
+    val visibleNearby = nearby.filter { device ->
+        device.name.contains(query, ignoreCase = true) || device.detail.contains(query, ignoreCase = true)
+    }
+    val showingSearch = searchActive
     Scaffold(
         topBar = {
             if (showingSearch) {
@@ -279,18 +283,11 @@ internal fun LibraryScreen(
                         )
                     },
                     actions = {
-                        if (tab == LibraryTab.Library) {
-                            IconButton(onClick = { searchActive = true }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Search,
-                                    contentDescription = stringResource(R.string.library_search),
-                                )
-                            }
-                        }
-                        onOpenIphone?.let {
-                            IconButton(onClick = it) {
-                                Icon(Icons.Outlined.PhoneIphone, stringResource(R.string.library_iphone))
-                            }
+                        IconButton(onClick = { searchActive = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = stringResource(R.string.library_search),
+                            )
                         }
                         IconButton(onClick = onAddConnection) {
                             Icon(
@@ -342,6 +339,24 @@ internal fun LibraryScreen(
                                 expanded = moreMenuExpanded,
                                 onDismissRequest = { moreMenuExpanded = false },
                             ) {
+                                if (tab == LibraryTab.Nearby && iphone != null && discoverNearby) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.iphone_refresh)) },
+                                        enabled = !iphone.discovery.busy,
+                                        onClick = {
+                                            moreMenuExpanded = false
+                                            iphone.refresh()
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.iphone_pair)) },
+                                        enabled = !iphone.discovery.busy,
+                                        onClick = {
+                                            moreMenuExpanded = false
+                                            iphone.pair()
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_settings)) },
                                     leadingIcon = {
@@ -369,7 +384,7 @@ internal fun LibraryScreen(
                         focusManager.clearFocus()
                     },
                     icon = {
-                        if (nearby.isEmpty()) {
+                        if (!discoverNearby || nearby.isEmpty()) {
                             Icon(Icons.Outlined.Sensors, contentDescription = null)
                         } else {
                             BadgedBox(badge = { Badge { Text(nearby.size.toString()) } }) {
@@ -381,7 +396,14 @@ internal fun LibraryScreen(
                 )
                 NavigationBarItem(
                     selected = tab == LibraryTab.Library,
-                    onClick = { tab = LibraryTab.Library },
+                    onClick = {
+                        if (tab != LibraryTab.Library) {
+                            tab = LibraryTab.Library
+                            searchActive = false
+                            query = ""
+                            focusManager.clearFocus()
+                        }
+                    },
                     icon = { Icon(Icons.Outlined.GridView, contentDescription = null) },
                     label = { Text(stringResource(R.string.library_tab_library)) },
                 )
@@ -390,7 +412,9 @@ internal fun LibraryScreen(
     ) { innerPadding ->
         if (tab == LibraryTab.Nearby) {
             NearbyContent(
-                servers = nearby,
+                devices = visibleNearby,
+                filtering = query.isNotBlank(),
+                iphone = iphone,
                 discoveryEnabled = discoverNearby,
                 onOpen = onOpenNearby,
                 onOpenSettings = onOpenSettings,
@@ -1207,15 +1231,16 @@ private fun MoveMenuItems(
 
 @Composable
 private fun NearbyContent(
-    servers: List<NearbyServer>,
+    devices: List<NearbyDevice>,
+    filtering: Boolean,
+    iphone: IphoneIntegration?,
     discoveryEnabled: Boolean,
-    onOpen: (NearbyServer) -> Unit,
+    onOpen: (NearbyDevice) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenIphone: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    when {
-        !discoveryEnabled -> NearbyEmpty(
+    if (!discoveryEnabled) {
+        NearbyEmpty(
             title = stringResource(R.string.library_nearby_off_title),
             body = stringResource(R.string.library_nearby_off_body),
             modifier = modifier,
@@ -1224,39 +1249,59 @@ private fun NearbyContent(
                 Text(stringResource(R.string.library_nearby_off_action))
             }
         }
+        return
+    }
 
-        servers.isEmpty() -> NearbyEmpty(
+    val status = iphone?.discovery
+    if (devices.isEmpty() && !filtering && status?.message == null &&
+        status?.canCancel != true && status?.pin == null
+    ) {
+        NearbyEmpty(
             title = stringResource(R.string.library_nearby_empty_title),
             body = stringResource(R.string.library_nearby_empty_body),
             modifier = modifier,
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
-                strokeWidth = 2.dp,
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.library_nearby_count, devices.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 2.dp),
             )
         }
-
-        else -> LazyColumn(
-            modifier = modifier,
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 12.dp,
-                bottom = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        if (status?.pin != null) {
+            item { Text(stringResource(R.string.iphone_pin, status.pin)) }
+        }
+        if (status?.message != null) {
+            item { Text(status.message) }
+        }
+        if (status?.canCancel == true) {
             item {
-                Text(
-                    text = stringResource(R.string.library_nearby_count, servers.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    TextButton(onClick = iphone.cancel) { Text(stringResource(R.string.iphone_cancel)) }
+                }
             }
-            items(servers, key = { it.id }) { server ->
-                NearbyRow(server = server, onClick = { onOpen(server) })
-            }
+        }
+        items(devices, key = NearbyDevice::id) { device ->
+            NearbyRow(
+                device = device,
+                onClick = { onOpen(device) },
+                enabled = device !is NearbyDevice.Iphone || status?.busy != true,
+                onPrepare = if (device is NearbyDevice.Iphone && iphone != null && !iphone.discovery.busy) {
+                    { iphone.prepare(device) }
+                } else null,
+            )
         }
     }
 }
@@ -1305,14 +1350,19 @@ private fun NearbyEmpty(
 }
 
 @Composable
-private fun NearbyRow(server: NearbyServer, onClick: () -> Unit) {
-    val gradient = autoAccent(server.name).gradient
-    val description = stringResource(R.string.library_nearby_open, server.name)
+private fun NearbyRow(
+    device: NearbyDevice,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    onPrepare: (() -> Unit)?,
+) {
+    val gradient = autoAccent(device.name).gradient
+    val description = stringResource(R.string.library_nearby_open, device.name)
 
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
         shape = RoundedCornerShape(18.dp),
     ) {
@@ -1330,7 +1380,8 @@ private fun NearbyRow(server: NearbyServer, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.Monitor,
+                    imageVector = if (device is NearbyDevice.Iphone) Icons.Outlined.PhoneIphone
+                        else Icons.Outlined.Monitor,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(24.dp),
@@ -1342,20 +1393,37 @@ private fun NearbyRow(server: NearbyServer, onClick: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = server.name,
+                    text = device.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = server.address,
+                    text = device.detail.ifBlank { stringResource(R.string.iphone_device_type) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (onPrepare != null) {
+                var actionsOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { actionsOpen = true }) {
+                        Icon(Icons.Outlined.MoreVert, stringResource(R.string.library_more))
+                    }
+                    DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.iphone_prepare)) },
+                            onClick = {
+                                actionsOpen = false
+                                onPrepare()
+                            },
+                        )
+                    }
+                }
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.ArrowForward,

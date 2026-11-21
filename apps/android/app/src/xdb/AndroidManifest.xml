@@ -4,11 +4,4 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
-    <application>
-        <activity
-            android:name="com.openscreens.app.ios.IphoneActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode|density"
-            android:exported="false"
-            android:resizeableActivity="true" />
-    </application>
 </manifest>
