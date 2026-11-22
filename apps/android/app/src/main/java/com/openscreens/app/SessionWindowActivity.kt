@@ -54,7 +54,6 @@ class SessionWindowActivity : ComponentActivity() {
                         connection = current,
                         sshKey = sshKeyStore.find(current.ssh?.keyId),
                         quality = current.quality,
-                        showDebugInfo = settings.showDebugInfo,
                         initialPointerMode = connectionStore.cursorMode(current),
                         onPointerModeChanged = { connectionStore.setCursorMode(current, it) },
                         onQualityChange = { connectionStore.setQuality(current.id, it) },

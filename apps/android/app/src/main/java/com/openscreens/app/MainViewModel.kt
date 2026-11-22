@@ -74,11 +74,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.save(_settings.value)
     }
 
-    fun setShowDebugInfo(enabled: Boolean) {
-        _settings.update { it.copy(showDebugInfo = enabled) }
-        settingsStore.save(_settings.value)
-    }
-
     fun markConnected(id: String) {
         connectionStore.markConnected(id)
     }

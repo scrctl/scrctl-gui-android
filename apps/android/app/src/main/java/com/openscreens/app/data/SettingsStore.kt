@@ -19,7 +19,6 @@ class SettingsStore(context: Context) {
         ),
         discoverNearby = preferences.getBoolean("discoverNearby", true),
         showSessionPreviews = preferences.getBoolean("showSessionPreviews", true),
-        showDebugInfo = preferences.getBoolean("showDebugInfo", false),
     )
 
     fun save(settings: AppSettings) {
@@ -29,7 +28,6 @@ class SettingsStore(context: Context) {
             .putString("librarySort", settings.librarySort.name)
             .putBoolean("discoverNearby", settings.discoverNearby)
             .putBoolean("showSessionPreviews", settings.showSessionPreviews)
-            .putBoolean("showDebugInfo", settings.showDebugInfo)
             .apply()
     }
 

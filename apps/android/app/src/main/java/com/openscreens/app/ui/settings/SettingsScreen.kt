@@ -78,7 +78,6 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onDiscoverNearbyChange: (Boolean) -> Unit,
     onShowSessionPreviewsChange: (Boolean) -> Unit,
-    onShowDebugInfoChange: (Boolean) -> Unit,
     updateChannel: UpdateChannel,
     onUpdateChannelChange: (UpdateChannel) -> Unit,
     onManageSshKeys: () -> Unit,
@@ -282,27 +281,6 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(4.dp))
-            SettingsCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .toggleable(
-                            value = settings.showDebugInfo,
-                            role = Role.Switch,
-                            onValueChange = onShowDebugInfoChange,
-                        )
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.settings_show_debug_info),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Switch(checked = settings.showDebugInfo, onCheckedChange = null)
-                }
-            }
-
             SectionHeader(stringResource(R.string.settings_updates))
             SettingsCard {
                 Column(

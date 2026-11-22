@@ -80,7 +80,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -139,7 +138,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -198,7 +196,6 @@ fun SessionScreen(
     onConnected: () -> Unit,
     onExit: () -> Unit,
     observeOnly: Boolean = false,
-    showDebugInfo: Boolean = false,
     initialPointerMode: SessionPointerMode,
     onPointerModeChanged: (SessionPointerMode) -> Unit,
 ) {
@@ -802,7 +799,7 @@ fun SessionScreen(
     val statusText = stringResource(
         when (status) {
             SessionStatus.Connecting -> R.string.session_status_connecting
-            SessionStatus.Connected -> R.string.session_status_connected
+            SessionStatus.Connected -> R.string.session_waiting_title
             SessionStatus.Disconnected -> R.string.session_status_disconnected
             SessionStatus.Failed -> R.string.session_status_error
         },
@@ -1679,6 +1676,7 @@ fun SessionScreen(
                 }
             } else {
                 RemoteCanvasPlaceholder(
+                    statusText = statusText,
                     remoteWidth = remoteWidth,
                     remoteHeight = remoteHeight,
                     modifier = Modifier.align(Alignment.Center),
@@ -1713,54 +1711,14 @@ fun SessionScreen(
             )
         }
 
-        if (chromeVisible || (showDebugInfo && status == SessionStatus.Connected)) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (showDebugInfo && status == SessionStatus.Connected) {
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            if (!observing && remoteWidth > 0 && remoteHeight > 0) {
-                                val x = if (centeredTrackpad) {
-                                    (trackpadPosition.x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1)
-                                } else cursorPosition?.x ?: (remoteWidth * 0.5f).toInt()
-                                val y = if (centeredTrackpad) {
-                                    (trackpadPosition.y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
-                                } else cursorPosition?.y ?: (remoteHeight * 0.55f).toInt()
-                                SessionDebugBadge("X $x  Y $y")
-                            }
-                            Spacer(Modifier.weight(1f))
-                            SessionDebugBadge(stringResource(R.string.session_zoom_level, zoom))
-                        }
-                    }
-                }
-                if (chromeVisible) {
-                    SessionTopBar(
-                        serverName = connection.name,
-                        statusText = if (observing) {
-                            stringResource(R.string.session_status_observing, statusText)
-                        } else {
-                            statusText
-                        },
-                        statusColor = statusColor(status),
-                    )
-                }
-            }
-        }
-
         val transferLabels = listOfNotNull(uploadLabel, downloadLabel)
         if (transferLabels.isNotEmpty()) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(top = 72.dp),
-                shape = MaterialTheme.shapes.medium,
+                    .padding(12.dp),
+                shape = CircleShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 Text(
@@ -2093,6 +2051,7 @@ private fun DrawScope.drawLocalCursor(tip: Offset) {
 
 @Composable
 private fun RemoteCanvasPlaceholder(
+    statusText: String,
     remoteWidth: Int,
     remoteHeight: Int,
     modifier: Modifier = Modifier,
@@ -2118,7 +2077,7 @@ private fun RemoteCanvasPlaceholder(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.session_waiting_title),
+            text = statusText,
             style = MaterialTheme.typography.titleMedium,
             color = Color.White.copy(alpha = 0.9f),
         )
@@ -2164,65 +2123,6 @@ private fun InputBadge(text: String, modifier: Modifier = Modifier) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
-    }
-}
-
-@Composable
-private fun SessionDebugBadge(text: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-    }
-}
-
-@Composable
-private fun SessionTopBar(
-    serverName: String,
-    statusText: String,
-    statusColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .touchBarrier(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(statusColor),
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                Text(
-                    text = serverName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
     }
 }
 
@@ -2654,13 +2554,6 @@ private fun x11Keysym(code: Int): Int {
     } else {
         0x0100_0000 or code
     }
-}
-
-private fun statusColor(status: SessionStatus): Color = when (status) {
-    SessionStatus.Connecting -> Color(0xFFF2C14E)
-    SessionStatus.Connected -> Color(0xFF6FDD9B)
-    SessionStatus.Disconnected -> Color(0xFFBFC8C8)
-    SessionStatus.Failed -> Color(0xFFFFB4AB)
 }
 
 /** Saves the current remote frame to the photo library, reporting through the snackbar. */
