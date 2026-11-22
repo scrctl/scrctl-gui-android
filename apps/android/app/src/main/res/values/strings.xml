@@ -254,7 +254,7 @@
     <string name="theme_dark">Dark</string>
     <string name="settings_streaming">Streaming</string>
     <string name="settings_about">About</string>
-    <string name="settings_app_description">An open-source VNC client powered by a shared Rust core.</string>
+    <string name="settings_app_description">An open-source remote access client.</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_license">Licensed under AGPL-3.0</string>
     <string name="settings_back">Back</string>
