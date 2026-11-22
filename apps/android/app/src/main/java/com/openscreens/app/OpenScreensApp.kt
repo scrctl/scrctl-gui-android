@@ -96,6 +96,7 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                     onThemeModeChange = viewModel::setThemeMode,
                     onDiscoverNearbyChange = viewModel::setDiscoverNearby,
                     onShowSessionPreviewsChange = viewModel::setShowSessionPreviews,
+                    onShowDebugInfoChange = viewModel::setShowDebugInfo,
                     updateChannel = settings.updateChannel,
                     onUpdateChannelChange = viewModel::setUpdateChannel,
                     onManageSshKeys = { viewModel.navigate(Route.SshKeys) },
@@ -137,6 +138,9 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                             sshKey = viewModel.sshKey(connection.ssh?.keyId),
                             quality = quality,
                             observeOnly = current.observeOnly,
+                            showDebugInfo = settings.showDebugInfo,
+                            initialPointerMode = viewModel.cursorMode(connection),
+                            onPointerModeChanged = { viewModel.setCursorMode(connection, it) },
                             onQualityChange = {
                                 quality = it
                                 viewModel.setConnectionQuality(connection.id, it)

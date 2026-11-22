@@ -1,14 +1,13 @@
 package com.openscreens.app.ui.session
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
@@ -21,7 +20,7 @@ import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.KeyboardCommandKey
 import androidx.compose.material.icons.outlined.Monitor
-import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Mouse
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.SwapVert
@@ -30,7 +29,6 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -38,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.openscreens.app.R
 import com.openscreens.app.data.QualityPreset
+import com.openscreens.app.data.SessionPointerMode
 import com.openscreens.app.data.RemotePlatform
 import com.openscreens.app.session.DisplayScreen
 import com.openscreens.app.ui.common.label
@@ -64,7 +64,7 @@ private val ActionSize = 48.dp
 // overflow whenever any of the available actions would otherwise be clipped.
 internal fun sessionToolbarInlineCount(actionCount: Int, widthPx: Int, actionWidthPx: Int): Int {
     val slots = widthPx / actionWidthPx
-    return if (actionCount <= slots) actionCount else (slots - 1).coerceAtLeast(0)
+    return if (actionCount <= slots) actionCount else if (slots >= 4) 3 else 0
 }
 
 private data class SessionAction(
@@ -82,8 +82,10 @@ internal fun SessionToolbar(
     onCommand: (DesktopCommand) -> Unit,
     observing: Boolean,
     onObserveModeChange: (Boolean) -> Unit,
-    trackpadMode: Boolean,
-    onTogglePointerMode: () -> Unit,
+    pointerMode: SessionPointerMode,
+    onPointerModeSelected: (SessionPointerMode) -> Unit,
+    onResetZoom: (() -> Unit)?,
+    vertical: Boolean,
     displays: List<DisplayScreen>,
     supportsCurtainMode: Boolean,
     onCurtainRequest: (Boolean) -> Unit,
@@ -112,22 +114,18 @@ internal fun SessionToolbar(
         onClick = onDisconnect,
     )
     val actions = buildList {
-        add(SessionAction(
-            stringResource(R.string.session_observe_mode),
-            Icons.Outlined.Visibility,
-            checked = observing,
-            onClick = { onObserveModeChange(!observing) },
-        ))
-        if (!observing) {
-            add(SessionAction(stringResource(R.string.session_keyboard), Icons.Outlined.Keyboard, onClick = onKeyboard))
-        }
-        add(SessionAction(stringResource(R.string.session_screenshot), Icons.Outlined.PhotoCamera, onClick = onScreenshot))
-        add(disconnect)
         if (!observing) {
             add(SessionAction(
-                stringResource(if (trackpadMode) R.string.session_pointer_trackpad else R.string.session_pointer_direct),
-                if (trackpadMode) Icons.Outlined.Mouse else Icons.Outlined.TouchApp,
-                onClick = onTogglePointerMode,
+                stringResource(R.string.session_pointer_mode),
+                pointerMode.icon,
+                submenu = SessionPointerMode.entries.map { mode ->
+                    SessionAction(
+                        stringResource(mode.label),
+                        mode.icon,
+                        checked = mode == pointerMode,
+                        onClick = { onPointerModeSelected(mode) },
+                    )
+                },
             ))
         }
         if (displays.isNotEmpty() || (supportsCurtainMode && !observing)) {
@@ -154,14 +152,7 @@ internal fun SessionToolbar(
             add(SessionAction(stringResource(R.string.session_displays), Icons.Outlined.Monitor, submenu = displayActions))
         }
         if (!observing) {
-            add(SessionAction(
-                stringResource(R.string.remote_commands),
-                Icons.Outlined.KeyboardCommandKey,
-                enabled = connected,
-                submenu = desktopCommands(platform).map { command ->
-                    SessionAction(stringResource(command.title), onClick = { onCommand(command) })
-                },
-            ))
+            add(SessionAction(stringResource(R.string.session_keyboard), Icons.Outlined.Keyboard, onClick = onKeyboard))
             add(SessionAction(
                 stringResource(R.string.session_clipboard),
                 Icons.Outlined.ContentPaste,
@@ -179,50 +170,79 @@ internal fun SessionToolbar(
             ),
         ))
         add(SessionAction(
-            stringResource(if (isFullscreen) R.string.session_exit_fullscreen else R.string.session_enter_fullscreen),
-            if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-            onClick = onToggleFullscreen,
-        ))
-        add(SessionAction(
-            stringResource(R.string.session_quality),
+            stringResource(R.string.session_display_options),
             Icons.Outlined.Tune,
-            submenu = QualityPreset.entries.map { preset ->
-                SessionAction(preset.label(), checked = preset == quality, onClick = { onQualitySelected(preset) })
+            submenu = buildList {
+                add(SessionAction(
+                    stringResource(if (isFullscreen) R.string.session_exit_fullscreen else R.string.session_enter_fullscreen),
+                    if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                    onClick = onToggleFullscreen,
+                ))
+                onResetZoom?.let { add(SessionAction(stringResource(R.string.session_reset_zoom), onClick = it)) }
+                addAll(QualityPreset.entries.map { preset ->
+                    SessionAction(preset.label(), checked = preset == quality, onClick = { onQualitySelected(preset) })
+                })
             },
         ))
+        if (!observing) {
+            add(SessionAction(
+                stringResource(R.string.remote_commands),
+                Icons.Outlined.KeyboardCommandKey,
+                enabled = connected,
+                submenu = desktopCommands(platform).map { command ->
+                    SessionAction(stringResource(command.title), onClick = { onCommand(command) })
+                },
+            ))
+        }
+        add(SessionAction(
+            stringResource(R.string.session_observe_mode),
+            Icons.Outlined.Visibility,
+            checked = observing,
+            onClick = { onObserveModeChange(!observing) },
+        ))
+        add(SessionAction(stringResource(R.string.session_screenshot), Icons.Outlined.PhotoCamera, onClick = onScreenshot))
         add(SessionAction(stringResource(R.string.session_hide_controls), Icons.Outlined.VisibilityOff, onClick = onHideChrome))
+        add(disconnect)
     }
 
-    BottomAppBar(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 4.dp),
-        windowInsets = WindowInsets(0, 0, 0, 0),
-    ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val actionWidth = with(LocalDensity.current) { ActionSize.roundToPx() }
-            val inlineCount = sessionToolbarInlineCount(actions.size, constraints.maxWidth, actionWidth)
-            val inlineActions = actions.take(inlineCount)
-            val overflow = actions.drop(inlineCount)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                inlineActions.forEach { action ->
-                    if (action !== disconnect) {
-                        key(action.label) { SessionActionButton(action) }
-                    }
-                }
-                if (overflow.isNotEmpty()) {
-                    SessionActionButton(SessionAction(
-                        stringResource(R.string.session_more_actions),
-                        Icons.Outlined.MoreVert,
-                        submenu = overflow,
-                    ))
-                }
-                if (inlineActions.any { it === disconnect }) {
-                    SessionActionButton(disconnect)
-                }
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val actionWidth = with(density) { ActionSize.roundToPx() }
+        val edgePadding = 4.dp
+        val padding = with(density) { 2 * edgePadding.roundToPx() }
+        val available = (if (vertical) constraints.maxHeight else constraints.maxWidth) - padding
+        val inlineCount = sessionToolbarInlineCount(actions.size, available, actionWidth)
+        val shown = actions.take(inlineCount).toMutableList()
+        val overflow = actions.drop(inlineCount)
+        if (overflow.isNotEmpty()) {
+            shown += SessionAction(
+                stringResource(R.string.session_more_actions),
+                Icons.Outlined.MoreHoriz,
+                submenu = overflow,
+            )
+        }
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer) {
+            val buttons: @Composable () -> Unit = {
+                shown.forEach { action -> key(action.label) { SessionActionButton(action) } }
+            }
+            if (vertical) {
+                Column(Modifier.padding(edgePadding)) { buttons() }
+            } else {
+                Row(Modifier.padding(edgePadding)) { buttons() }
             }
         }
     }
 }
+
+private val SessionPointerMode.label: Int
+    get() = when (this) {
+        SessionPointerMode.Direct -> R.string.session_pointer_direct
+        SessionPointerMode.Trackpad -> R.string.session_pointer_trackpad
+        SessionPointerMode.Hybrid -> R.string.session_pointer_hybrid
+    }
+
+private val SessionPointerMode.icon: ImageVector
+    get() = if (this == SessionPointerMode.Hybrid) Icons.Outlined.Mouse else Icons.Outlined.TouchApp
 
 @Composable
 private fun SessionActionButton(action: SessionAction) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.openscreens.app.data.AppSettings
 import com.openscreens.app.data.Connection
 import com.openscreens.app.data.matchingEndpoint
+import com.openscreens.app.data.SessionPointerMode
 import com.openscreens.app.data.ConnectionStore
 import com.openscreens.app.data.LibrarySortOrder
 import com.openscreens.app.data.NearbyDiscovery
@@ -70,6 +71,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowSessionPreviews(enabled: Boolean) {
         previews.setEnabled(enabled)
         _settings.update { it.copy(showSessionPreviews = enabled) }
+        settingsStore.save(_settings.value)
+    }
+
+    fun setShowDebugInfo(enabled: Boolean) {
+        _settings.update { it.copy(showDebugInfo = enabled) }
         settingsStore.save(_settings.value)
     }
 
@@ -141,6 +147,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setConnectionQuality(id: String, quality: QualityPreset) {
         connectionStore.setQuality(id, quality)
+    }
+
+    fun cursorMode(connection: Connection): SessionPointerMode = connectionStore.cursorMode(connection)
+
+    fun setCursorMode(connection: Connection, mode: SessionPointerMode) {
+        connectionStore.setCursorMode(connection, mode)
     }
 
     fun setPreferredDisplay(id: String, displayId: Int?) {

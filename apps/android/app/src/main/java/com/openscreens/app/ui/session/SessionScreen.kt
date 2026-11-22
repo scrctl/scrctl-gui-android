@@ -13,6 +13,8 @@ import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +27,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -63,7 +66,6 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -78,6 +80,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,6 +93,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -107,15 +111,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -133,6 +139,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -142,6 +149,7 @@ import com.openscreens.app.R
 import com.openscreens.app.data.Connection
 import com.openscreens.app.data.DisconnectAction
 import com.openscreens.app.data.QualityPreset
+import com.openscreens.app.data.SessionPointerMode
 import com.openscreens.app.data.SshKey
 import com.openscreens.app.session.ClipboardEncodingException
 import com.openscreens.app.session.SessionClipboard
@@ -190,6 +198,9 @@ fun SessionScreen(
     onConnected: () -> Unit,
     onExit: () -> Unit,
     observeOnly: Boolean = false,
+    showDebugInfo: Boolean = false,
+    initialPointerMode: SessionPointerMode,
+    onPointerModeChanged: (SessionPointerMode) -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -238,11 +249,17 @@ fun SessionScreen(
     var isExiting by remember { mutableStateOf(false) }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var bottomBarHeight by remember { mutableIntStateOf(0) }
+    var toolbarWidth by remember { mutableIntStateOf(0) }
     var keyboardActive by remember { mutableStateOf(false) }
     var modifiers by remember { mutableIntStateOf(0) }
     var backgroundedAt by remember { mutableLongStateOf(0L) }
     var cursorPosition by remember { mutableStateOf<IntOffset?>(null) }
-    var trackpadMode by rememberSaveable { mutableStateOf(false) }
+    var pointerMode by rememberSaveable(connection.id) { mutableStateOf(initialPointerMode) }
+    val trackpadMode = pointerMode == SessionPointerMode.Trackpad
+    val hybridMode = pointerMode == SessionPointerMode.Hybrid
+    var recenterJob by remember { mutableStateOf<Job?>(null) }
+    var recenterStart by remember { mutableStateOf<Offset?>(null) }
+    var recenterProgress by remember { mutableFloatStateOf(1f) }
     var desktopScreens by remember { mutableStateOf<List<DisplayScreen>>(emptyList()) }
     var needsMacSessionChoice by remember(session) { mutableStateOf(false) }
     var supportsCurtainMode by remember(session) { mutableStateOf(false) }
@@ -791,12 +808,6 @@ fun SessionScreen(
         },
     )
 
-    val recordPointer: (Int, Int) -> Unit = { x, y ->
-        lastAction = context.getString(
-            R.string.session_action_prefix,
-            context.getString(R.string.session_pointer_sent, x, y),
-        )
-    }
 
     // Sticky modifiers are pressed for the duration of one key chord, then released so
     // they cannot get stuck on the remote if the connection drops mid-chord.
@@ -831,20 +842,29 @@ fun SessionScreen(
             16f / 9f
         }
         val density = LocalDensity.current
-        val bottomInset = if (chromeVisible || keyboardActive) {
+        val verticalToolbar = maxWidth > maxHeight && maxHeight < 480.dp
+        val sideInset = if (chromeVisible && !keyboardActive && verticalToolbar) {
+            with(density) { toolbarWidth.toDp() }.coerceAtMost((maxWidth - 1.dp).coerceAtLeast(0.dp))
+        } else {
+            0.dp
+        }
+        val bottomInset = if (keyboardActive || (chromeVisible && !verticalToolbar)) {
             with(density) { bottomBarHeight.toDp() }.coerceAtMost((maxHeight - 1.dp).coerceAtLeast(0.dp))
         } else {
             0.dp
         }
         val canvasHeight = maxHeight - bottomInset
-        val canvasWidth = min(maxWidth.value, canvasHeight.value * aspect).dp
+        val availableWidth = maxWidth - sideInset
+        val canvasWidth = min(availableWidth.value, canvasHeight.value * aspect).dp
+        val safeDrawing = WindowInsets.safeDrawing
+        val layoutDirection = LocalLayoutDirection.current
 
         // Keep a local crop around the visible region, and ask for a
         // sampling density that matches the current zoom. Debounced so a pinch
         // or pan settles before the region is re-requested.
         val canvasPixelWidth = with(density) { canvasWidth.toPx() }
         val canvasPixelHeight = canvasPixelWidth / aspect
-        val screenPixelWidth = with(density) { maxWidth.toPx() }
+        val screenPixelWidth = with(density) { availableWidth.toPx() }
         val screenPixelHeight = with(density) { canvasHeight.toPx() }
         val screenSizePx = IntSize(
             screenPixelWidth.roundToInt(),
@@ -854,6 +874,15 @@ fun SessionScreen(
             canvasPixelWidth.roundToInt(),
             canvasPixelHeight.roundToInt(),
         )
+        // Express the full rendering area in the safe gesture space.
+        val renderBounds = Rect(
+            left = -safeDrawing.getLeft(density, layoutDirection).toFloat(),
+            top = -safeDrawing.getTop(density).toFloat(),
+            right = screenSizePx.width + with(density) { sideInset.toPx() } +
+                safeDrawing.getRight(density, layoutDirection),
+            bottom = screenSizePx.height + with(density) { bottomInset.toPx() } +
+                safeDrawing.getBottom(density),
+        )
         val centeredTrackpad = trackpadMode && !observing
         LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad) {
             pan = if (centeredTrackpad) {
@@ -862,25 +891,17 @@ fun SessionScreen(
                 clampPan(pan, zoom, bandSizePx, screenSizePx)
             }
         }
-        val togglePointerMode: () -> Unit = {
-            val next = !trackpadMode
-            trackpadMode = next
-            if (next) {
+        val selectPointerMode: (SessionPointerMode) -> Unit = { next ->
+            recenterJob?.cancel()
+            recenterStart = null
+            pointerMode = next
+            onPointerModeChanged(next)
+            if (next == SessionPointerMode.Trackpad) {
                 trackpadPosition = Offset(
                     (0.5f - pan.x / bandSizePx.width.coerceAtLeast(1)).coerceIn(0f, 1f),
                     (0.5f - pan.y / bandSizePx.height.coerceAtLeast(1)).coerceIn(0f, 1f),
                 )
             }
-            lastAction = context.getString(
-                R.string.session_action_prefix,
-                context.getString(
-                    if (next) {
-                        R.string.session_pointer_trackpad
-                    } else {
-                        R.string.session_pointer_direct
-                    },
-                ),
-            )
         }
         LaunchedEffect(
             session,
@@ -891,8 +912,8 @@ fun SessionScreen(
             remoteHeight,
             canvasPixelWidth,
             canvasPixelHeight,
-            screenPixelWidth,
-            screenPixelHeight,
+            screenSizePx,
+            renderBounds,
         ) {
             if (status != SessionStatus.Connected ||
                 remoteWidth <= 1 || remoteHeight <= 1 || canvasPixelWidth < 1f
@@ -905,8 +926,8 @@ fun SessionScreen(
                 pan = pan,
                 bandWidth = canvasPixelWidth,
                 bandHeight = canvasPixelHeight,
-                screenWidth = screenPixelWidth,
-                screenHeight = screenPixelHeight,
+                screen = screenSizePx,
+                renderBounds = renderBounds,
                 serverWidth = remoteWidth,
                 serverHeight = remoteHeight,
             )
@@ -915,7 +936,7 @@ fun SessionScreen(
                 rect[1],
                 rect[2],
                 rect[3],
-                screenPixelWidth.roundToInt(),
+                renderBounds.width.roundToInt(),
             )
         }
 
@@ -937,10 +958,10 @@ fun SessionScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = bottomInset)
-                .clipToBounds()
-                // Keep gestures in the same coordinates as the drawable canvas.
-                .pointerInput(session, remoteWidth, remoteHeight, trackpadMode, zoomEnabled, observing, screenSizePx) {
+                .absolutePadding(right = sideInset, bottom = bottomInset)
+                // Gesture coordinates use the safe layout. The desktop draw
+                // can overflow it into the remaining window area.
+                .pointerInput(session, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing, screenSizePx) {
                     if (observing) {
                         if (zoomEnabled && remoteWidth > 1 && remoteHeight > 1) {
                             val center = Offset(size.width / 2f, size.height / 2f)
@@ -973,12 +994,41 @@ fun SessionScreen(
                         (trackpadPosition.x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1) to
                             (trackpadPosition.y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
 
+                    fun followTrackpad() {
+                        val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                        val start = recenterStart
+                        pan = if (start == null) target else start + (target - start) * recenterProgress
+                    }
+
+                    fun startHybridRecentering() {
+                        recenterJob?.cancel()
+                        val (x, y) = pointerMemory.resolve(remoteWidth, remoteHeight)
+                        trackpadPosition = Offset(x.toFloat() / remoteWidth, y.toFloat() / remoteHeight)
+                        val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                        recenterStart = null
+                        if ((target - pan).getDistance() < 0.5f) return
+                        recenterStart = pan
+                        recenterProgress = 0f
+                        recenterJob = scope.launch {
+                            animate(initialValue = 0f, targetValue = 1f, animationSpec = tween(500)) { value, _ ->
+                                recenterProgress = value
+                                followTrackpad()
+                            }
+                            recenterStart = null
+                        }
+                    }
+
+                    fun stopHybridRecentering() {
+                        recenterJob?.cancel()
+                        recenterStart = null
+                    }
+
                     fun moveTrackpad(delta: Offset): Pair<Int, Int> {
                         trackpadPosition = Offset(
                             (trackpadPosition.x + delta.x / (bandSizePx.width * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
                             (trackpadPosition.y + delta.y / (bandSizePx.height * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
                         )
-                        pan = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                        followTrackpad()
                         return trackpadTarget()
                     }
 
@@ -1001,7 +1051,6 @@ fun SessionScreen(
                         session.sendPointer(x, y, 1)
                         session.sendPointer(x, y, 0)
                         trackPointer(x, y)
-                        recordPointer(x, y)
                     }
 
                     fun flushPendingTap() {
@@ -1156,7 +1205,6 @@ fun SessionScreen(
                             session.sendPointer(pressTarget.first, pressTarget.second, 0)
                             session.sendPointer(pressTarget.first, pressTarget.second, button)
                             trackPointer(pressTarget.first, pressTarget.second)
-                            recordPointer(pressTarget.first, pressTarget.second)
                             multiTouchTapCandidate = false
                             multiTouchMoved = true
                             threeFingerSwipe = null
@@ -1176,7 +1224,6 @@ fun SessionScreen(
                             session.sendPointer(x, y, mask)
                             session.sendPointer(x, y, 0)
                             trackPointer(x, y)
-                            recordPointer(x, y)
                         }
 
                         fun sendDoubleClick(x: Int, y: Int) {
@@ -1185,6 +1232,7 @@ fun SessionScreen(
                         }
 
                         fun applyPinch(centroid: Offset) {
+                            if (hybridMode) stopHybridRecentering()
                             val newZoom = (multiTouchStartZoom * multiTouchZoom)
                                 .coerceIn(1f, MAX_ZOOM)
                             val newPan = clampPan(
@@ -1454,7 +1502,7 @@ fun SessionScreen(
                             }
 
                             val change = pressed.first()
-                            if (!startedOnImage) {
+                            if (!startedOnImage && !hybridMode) {
                                 movedInLetterbox = movedInLetterbox ||
                                     (change.position - down.position).getDistance() > touchSlop
                                 continue
@@ -1474,13 +1522,13 @@ fun SessionScreen(
                             if (mode == GestureMode.Pending &&
                                 (change.position - down.position).getDistance() > touchSlop
                             ) {
-                                if (trackpadMode) {
+                                if (trackpadMode || hybridMode) {
                                     mode = GestureMode.Move
+                                    if (hybridMode) startHybridRecentering()
                                 } else {
                                     mode = GestureMode.Drag
                                     session.sendPointer(start.first, start.second, 1)
                                     trackPointer(start.first, start.second)
-                                    recordPointer(start.first, start.second)
                                 }
                             }
                             if (mode == GestureMode.Drag) {
@@ -1514,6 +1562,7 @@ fun SessionScreen(
                                 trackPointer(last.first, last.second)
                             }
                             GestureMode.Pending -> {
+                                if (hybridMode) stopHybridRecentering()
                                 if (!startedOnImage) {
                                     if (!movedInLetterbox) chromeVisible = !chromeVisible
                                 } else if (isDoubleTap) {
@@ -1625,7 +1674,7 @@ fun SessionScreen(
                         } else {
                             Offset(origin.x + x * scaleX, origin.y + y * scaleY)
                         }
-                        drawLocalCursor(pointer)
+                        clipRect { drawLocalCursor(pointer) }
                     }
                 }
             } else {
@@ -1664,20 +1713,44 @@ fun SessionScreen(
             )
         }
 
-        if (chromeVisible) {
-            SessionTopBar(
-                serverName = connection.name,
-                statusText = if (observing) {
-                    stringResource(R.string.session_status_observing, statusText)
-                } else {
-                    statusText
-                },
-                statusColor = statusColor(status),
+        if (chromeVisible || (showDebugInfo && status == SessionStatus.Connected)) {
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (showDebugInfo && status == SessionStatus.Connected) {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            if (!observing && remoteWidth > 0 && remoteHeight > 0) {
+                                val x = if (centeredTrackpad) {
+                                    (trackpadPosition.x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1)
+                                } else cursorPosition?.x ?: (remoteWidth * 0.5f).toInt()
+                                val y = if (centeredTrackpad) {
+                                    (trackpadPosition.y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
+                                } else cursorPosition?.y ?: (remoteHeight * 0.55f).toInt()
+                                SessionDebugBadge("X $x  Y $y")
+                            }
+                            Spacer(Modifier.weight(1f))
+                            SessionDebugBadge(stringResource(R.string.session_zoom_level, zoom))
+                        }
+                    }
+                }
+                if (chromeVisible) {
+                    SessionTopBar(
+                        serverName = connection.name,
+                        statusText = if (observing) {
+                            stringResource(R.string.session_status_observing, statusText)
+                        } else {
+                            statusText
+                        },
+                        statusColor = statusColor(status),
+                    )
+                }
+            }
         }
 
         val transferLabels = listOfNotNull(uploadLabel, downloadLabel)
@@ -1727,8 +1800,15 @@ fun SessionScreen(
                 quality = quality,
                 onQualitySelected = selectQuality,
                 isFullscreen = isFullscreen,
-                trackpadMode = trackpadMode,
-                onTogglePointerMode = togglePointerMode,
+                pointerMode = pointerMode,
+                onPointerModeSelected = selectPointerMode,
+                vertical = verticalToolbar,
+                onResetZoom = if (zoomed) {{
+                    recenterJob?.cancel()
+                    recenterStart = null
+                    zoom = 1f
+                    pan = Offset.Zero
+                }} else null,
                 displays = desktopScreens,
                 supportsCurtainMode = status == SessionStatus.Connected && supportsCurtainMode,
                 onCurtainRequest = { enabled ->
@@ -1766,9 +1846,11 @@ fun SessionScreen(
                 onHideChrome = { chromeVisible = false },
                 onDisconnect = requestExit,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .onSizeChanged { bottomBarHeight = it.height }
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .align(if (verticalToolbar) AbsoluteAlignment.CenterRight else Alignment.BottomCenter)
+                    .onSizeChanged {
+                        if (verticalToolbar) toolbarWidth = it.width else bottomBarHeight = it.height
+                    }
+                    .absolutePadding(right = if (verticalToolbar) 8.dp else 0.dp, bottom = if (verticalToolbar) 0.dp else 8.dp)
                     .touchBarrier(),
             )
         } else {
@@ -1781,23 +1863,6 @@ fun SessionScreen(
             )
         }
 
-        if (zoom > 1.01f) {
-            FilledTonalButton(
-                onClick = {
-                    zoom = 1f
-                    pan = Offset.Zero
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(top = if (chromeVisible) 72.dp else 12.dp, end = 12.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.session_zoom_level, zoom),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-        }
 
         SnackbarHost(
             hostState = snackbarHostState,
@@ -1980,25 +2045,25 @@ private fun viewportFits(viewport: SessionEvent.Viewport?, width: Int, height: I
 }
 
 /** Framebuffer region visible through the screen-sized window under zoom/pan. */
-private fun visibleServerRect(
+internal fun visibleServerRect(
     zoom: Float,
     pan: Offset,
     bandWidth: Float,
     bandHeight: Float,
-    screenWidth: Float,
-    screenHeight: Float,
+    screen: IntSize,
+    renderBounds: Rect,
     serverWidth: Int,
     serverHeight: Int,
 ): IntArray {
     val safeZoom = zoom.coerceAtLeast(0.01f)
     // The band is the 1x fit rect, scaled about its centre and panned in band
     // units; inverting the screen rect gives the visible band region.
-    val halfScreenX = screenWidth / (2f * safeZoom)
-    val halfScreenY = screenHeight / (2f * safeZoom)
-    val left = (bandWidth / 2f - halfScreenX - pan.x).coerceIn(0f, bandWidth)
-    val right = (bandWidth / 2f + halfScreenX - pan.x).coerceIn(0f, bandWidth)
-    val top = (bandHeight / 2f - halfScreenY - pan.y).coerceIn(0f, bandHeight)
-    val bottom = (bandHeight / 2f + halfScreenY - pan.y).coerceIn(0f, bandHeight)
+    val centerX = screen.width / 2f
+    val centerY = screen.height / 2f
+    val left = (bandWidth / 2f + (renderBounds.left - centerX) / safeZoom - pan.x).coerceIn(0f, bandWidth)
+    val right = (bandWidth / 2f + (renderBounds.right - centerX) / safeZoom - pan.x).coerceIn(0f, bandWidth)
+    val top = (bandHeight / 2f + (renderBounds.top - centerY) / safeZoom - pan.y).coerceIn(0f, bandHeight)
+    val bottom = (bandHeight / 2f + (renderBounds.bottom - centerY) / safeZoom - pan.y).coerceIn(0f, bandHeight)
     val scaleX = serverWidth / bandWidth
     val scaleY = serverHeight / bandHeight
     // Round outward so the delivered crop always covers the visible edges.
@@ -2098,6 +2163,20 @@ private fun InputBadge(text: String, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+        )
+    }
+}
+
+@Composable
+private fun SessionDebugBadge(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }

@@ -39,6 +39,8 @@ class ConnectionStore(
         isSaved = { find(it) != null },
     )
 
+    private var cursorModes = loaded?.cursorModes.orEmpty()
+
     private val _groups = MutableStateFlow(loaded?.groups.orEmpty())
     val groups: StateFlow<List<ConnectionGroup>> = _groups.asStateFlow()
 
@@ -98,6 +100,22 @@ class ConnectionStore(
     fun setQuality(id: String, quality: QualityPreset) {
         updateConnection(id) { it.copy(quality = quality) }
     }
+
+    @Synchronized
+    fun cursorMode(connection: Connection): SessionPointerMode =
+        cursorModes[connection.cursorModeKey()] ?: SessionPointerMode.Hybrid
+
+    @Synchronized
+    fun setCursorMode(connection: Connection, mode: SessionPointerMode) {
+        val key = connection.cursorModeKey()
+        if (cursorModes[key] == mode) return
+        val previous = cursorModes
+        cursorModes = previous + (key to mode)
+        if (!persist()) cursorModes = previous
+    }
+
+    private fun Connection.cursorModeKey(): String =
+        "${host.trim().removeSuffix(".").lowercase()}:$port"
 
     fun setPreferredDisplay(id: String, displayId: Int?) {
         updateConnection(id) { connection ->
@@ -243,6 +261,7 @@ class ConnectionStore(
             .put("version", 2)
             .put("connections", array)
             .put("groups", groupArray)
+            .put("cursorModes", JSONObject(cursorModes.mapValues { it.value.name }))
             .toString()
     }
 
@@ -319,7 +338,16 @@ class ConnectionStore(
                 }
             }
         }
-        return StoredLibrary(connections = connections, groups = groups)
+        val modes = root.optJSONObject("cursorModes")
+        val cursorModes = buildMap {
+            if (modes != null) {
+                for (key in modes.keys()) {
+                    SessionPointerMode.entries.firstOrNull { it.name == modes.optString(key) }
+                        ?.let { put(key, it) }
+                }
+            }
+        }
+        return StoredLibrary(connections = connections, groups = groups, cursorModes = cursorModes)
     }
 
     private fun secretKey(): SecretKey {
@@ -362,6 +390,7 @@ class ConnectionStore(
     private data class StoredLibrary(
         val connections: List<Connection>,
         val groups: List<ConnectionGroup>,
+        val cursorModes: Map<String, SessionPointerMode>,
     )
 
     companion object {

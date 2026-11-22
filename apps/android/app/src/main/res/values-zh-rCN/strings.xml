@@ -330,4 +330,9 @@
     <string name="session_mac_choice_hint">此 Mac 上已有其他用户登录。可使用你的 Mac 账户打开个人会话，或请求共享当前会话。</string>
     <string name="session_mac_personal">打开个人会话</string>
     <string name="session_mac_share">请求共享会话</string>
+    <string name="session_pointer_hybrid">混合模式</string>
+    <string name="settings_show_debug_info">显示调试信息</string>
+    <string name="session_reset_zoom">重置缩放</string>
+    <string name="session_display_options">显示选项</string>
+    <string name="session_pointer_mode">光标模式</string>
 </resources>
