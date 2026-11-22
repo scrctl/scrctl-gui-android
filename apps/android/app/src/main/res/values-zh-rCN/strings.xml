@@ -344,4 +344,8 @@
     <string name="session_scale_fill">填满</string>
     <string name="session_quality_failed">无法切换画质。</string>
     <string name="session_scaling">缩放</string>
+    <string name="editor_remote_system_scale">远端系统缩放</string>
+    <string name="session_actual_size">实际大小（1:1）</string>
+    <string name="session_fit_desktop">完整显示</string>
+    <string name="editor_scale_percent">%1$d%%</string>
 </resources>

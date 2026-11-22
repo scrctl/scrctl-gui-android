@@ -346,4 +346,8 @@
     <string name="session_scale_fill">Scale to Fill</string>
     <string name="session_quality_failed">Could not change picture quality.</string>
     <string name="session_scaling">Scaling</string>
+    <string name="editor_remote_system_scale">Remote System Scale</string>
+    <string name="session_actual_size">Actual Size (1:1)</string>
+    <string name="session_fit_desktop">Fit Entire Desktop</string>
+    <string name="editor_scale_percent">%1$d%%</string>
 </resources>

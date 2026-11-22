@@ -222,6 +222,7 @@ class ConnectionStore(
                 .put("vncPassword", connection.vncPassword)
                 .put("quality", connection.quality.name)
                 .put("zoomEnabled", connection.zoomEnabled)
+                .put("remoteScalePercent", connection.remoteScalePercent)
                 .put("keepScreenAwake", connection.keepScreenAwake)
                 .put("sharedClipboard", connection.sharedClipboard)
                 .put("startInObserveMode", connection.startInObserveMode)
@@ -307,6 +308,7 @@ class ConnectionStore(
                         platform = RemotePlatform.entries.firstOrNull { it.name == item.optString("platform") }
                             ?: RemotePlatform.Other,
                         zoomEnabled = item.optBoolean("zoomEnabled", true),
+                        remoteScalePercent = item.optInt("remoteScalePercent", 100),
                         keepScreenAwake = item.optBoolean("keepScreenAwake", false),
                         startInObserveMode = item.optBoolean("startInObserveMode", false),
                         rememberSelectedDisplay = item.optBoolean("rememberSelectedDisplay", true),

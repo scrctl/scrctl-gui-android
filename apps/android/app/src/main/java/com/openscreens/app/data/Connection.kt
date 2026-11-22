@@ -31,6 +31,7 @@ data class Connection(
     val quality: QualityPreset = QualityPreset.Balanced,
     /** Two-finger pinch magnifies the remote image; off reserves two fingers for scrolling. */
     val zoomEnabled: Boolean = true,
+    val remoteScalePercent: Int = 100,
     val lastConnectedAt: Long? = null,
     /** User-created library folder, when the connection belongs to one. */
     val groupId: String? = null,

@@ -138,6 +138,10 @@ fun ConnectionEditorScreen(
     var zoomEnabled by rememberSaveable(editorKey) {
         mutableStateOf(seed?.zoomEnabled ?: true)
     }
+    var remoteScalePercent by rememberSaveable(editorKey) {
+        mutableStateOf(seed?.remoteScalePercent ?: 100)
+    }
+    var remoteScaleMenuOpen by remember { mutableStateOf(false) }
     var requestMacSharing by rememberSaveable(editorKey) { mutableStateOf(seed?.requestMacSharing ?: false) }
     var username by rememberSaveable(editorKey) {
         mutableStateOf(seed?.username.orEmpty())
@@ -321,6 +325,7 @@ fun ConnectionEditorScreen(
                 quality = quality,
                 rememberSelectedDisplay = rememberSelectedDisplay,
                 zoomEnabled = zoomEnabled,
+                remoteScalePercent = remoteScalePercent,
                 keepScreenAwake = keepScreenAwake,
                 startInObserveMode = startInObserveMode,
                 platform = platform,
@@ -649,6 +654,32 @@ fun ConnectionEditorScreen(
                     }
                     Spacer(Modifier.width(12.dp))
                     Switch(checked = zoomEnabled, onCheckedChange = null)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.editor_remote_system_scale), Modifier.weight(1f))
+                    Box {
+                        OutlinedButton(onClick = { remoteScaleMenuOpen = true }) {
+                            Text(stringResource(R.string.editor_scale_percent, remoteScalePercent))
+                        }
+                        DropdownMenu(
+                            expanded = remoteScaleMenuOpen,
+                            onDismissRequest = { remoteScaleMenuOpen = false },
+                        ) {
+                            listOf(100, 125, 150, 175, 200, 225, 250, 300, 350, 400).forEach { percent ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.editor_scale_percent, percent)) },
+                                    onClick = {
+                                        remoteScalePercent = percent
+                                        remoteScaleMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Row(

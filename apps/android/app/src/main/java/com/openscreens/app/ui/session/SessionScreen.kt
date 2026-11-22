@@ -880,7 +880,7 @@ fun SessionScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         val aspect = if (remoteWidth > 0 && remoteHeight > 0) {
-            (remoteWidth.toFloat() / remoteHeight.toFloat()).coerceAtLeast(0.1f)
+            remoteWidth.toFloat() / remoteHeight.toFloat()
         } else {
             // Unknown until Connected; keep layout valid (NaN aspectRatio crashes).
             16f / 9f
@@ -899,10 +899,14 @@ fun SessionScreen(
         }
         val canvasHeight = maxHeight - bottomInset
         val availableWidth = maxWidth - sideInset
+        val fitWidth = min(availableWidth.value, canvasHeight.value * aspect)
         val canvasWidth = when (scaling) {
-            SessionScaling.Fit -> min(availableWidth.value, canvasHeight.value * aspect)
+            SessionScaling.Fit -> fitWidth
             SessionScaling.Fill -> max(availableWidth.value, canvasHeight.value * aspect)
         }.dp
+        val (minimumZoom, actualSizeZoom, maximumZoom) = sessionZoomBounds(
+            canvasWidth.value, fitWidth, remoteWidth, connection.remoteScalePercent,
+        )
         val safeDrawing = WindowInsets.safeDrawing
         val layoutDirection = LocalLayoutDirection.current
 
@@ -931,10 +935,13 @@ fun SessionScreen(
                 safeDrawing.getBottom(density),
         )
         val centeredTrackpad = trackpadMode && !observing
-        LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad) {
+        LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad, minimumZoom, maximumZoom) {
             recenterJob?.cancel()
             recenterStart = null
-            pan = if (centeredTrackpad) {
+            zoom = zoom.coerceIn(minimumZoom, maximumZoom)
+            pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
+                Offset.Zero
+            } else if (centeredTrackpad) {
                 trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
             } else {
                 clampPan(pan, zoom, bandSizePx, screenSizePx)
@@ -1000,7 +1007,7 @@ fun SessionScreen(
             )
         }
 
-        val zoomed = zoom > ZOOM_ACTIVE_EPSILON
+        val zoomed = zoom > minimumZoom * ZOOM_ACTIVE_EPSILON
         val zoomEnabled = connection.zoomEnabled
         val longPressSlop = with(density) { 12.dp.toPx() }
         val swipeThreshold = with(density) { 48.dp.toPx() }
@@ -1010,20 +1017,24 @@ fun SessionScreen(
                 .absolutePadding(right = sideInset, bottom = bottomInset)
                 // Gesture coordinates use the safe layout. The desktop draw
                 // can overflow it into the remaining window area.
-                .pointerInput(session, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing, screenSizePx, bandSizePx) {
+                .pointerInput(session, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing, screenSizePx, bandSizePx, minimumZoom, maximumZoom) {
                     if (observing) {
                         if (zoomEnabled && remoteWidth > 1 && remoteHeight > 1) {
                             val center = Offset(size.width / 2f, size.height / 2f)
                             detectTransformGestures { centroid, delta, scale, _ ->
-                                val newZoom = (zoom * scale).coerceIn(1f, MAX_ZOOM)
-                                pan = clampPan(
-                                    pan + (centroid + delta - center) / newZoom -
-                                        (centroid - center) / zoom,
-                                    newZoom,
-                                    bandSizePx,
-                                    screenSizePx,
-                                )
-                                zoom = if (newZoom <= ZOOM_ACTIVE_EPSILON) 1f else newZoom
+                                val newZoom = (zoom * scale).coerceIn(minimumZoom, maximumZoom)
+                                pan = if (newZoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
+                                    Offset.Zero
+                                } else {
+                                    clampPan(
+                                        pan + (centroid + delta - center) / newZoom -
+                                            (centroid - center) / zoom,
+                                        newZoom,
+                                        bandSizePx,
+                                        screenSizePx,
+                                    )
+                                }
+                                zoom = newZoom
                             }
                         }
                         return@pointerInput
@@ -1279,7 +1290,7 @@ fun SessionScreen(
                         fun applyPinch(centroid: Offset) {
                             if (hybridMode) stopHybridRecentering()
                             val newZoom = (multiTouchStartZoom * multiTouchZoom)
-                                .coerceIn(1f, MAX_ZOOM)
+                                .coerceIn(minimumZoom, maximumZoom)
                             val newPan = clampPan(
                                 multiTouchStartPan +
                                     (centroid - screenCenter) / newZoom -
@@ -1289,8 +1300,10 @@ fun SessionScreen(
                                 bandSizePx,
                                 screenSizePx,
                             )
-                            zoom = if (newZoom <= ZOOM_ACTIVE_EPSILON) 1f else newZoom
-                            pan = if (trackpadMode) {
+                            zoom = newZoom
+                            pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
+                                Offset.Zero
+                            } else if (trackpadMode) {
                                 trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
                             } else {
                                 newPan
@@ -1389,7 +1402,7 @@ fun SessionScreen(
                                         trackPointer(last.first, last.second)
                                     }
                                     multiTouchTapCandidate = startedOnImage && mode == GestureMode.Pending
-                                    mode = if (zoomEnabled && zoom > ZOOM_ACTIVE_EPSILON) {
+                                    mode = if (zoomEnabled && zoom > minimumZoom * ZOOM_ACTIVE_EPSILON) {
                                         GestureMode.Transform
                                     } else {
                                         GestureMode.TwoFinger
@@ -1786,11 +1799,21 @@ fun SessionScreen(
                 pointerMode = pointerMode,
                 onPointerModeSelected = selectPointerMode,
                 vertical = verticalToolbar,
-                onResetZoom = if (zoomed) {{
+                onResetZoom = {
                     recenterJob?.cancel()
                     recenterStart = null
-                    zoom = 1f
+                    zoom = minimumZoom
                     pan = Offset.Zero
+                },
+                onActualSize = if (remoteWidth > 0) {{
+                    recenterJob?.cancel()
+                    recenterStart = null
+                    zoom = actualSizeZoom.coerceIn(minimumZoom, maximumZoom)
+                    pan = if (centeredTrackpad) {
+                        trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                    } else {
+                        Offset.Zero
+                    }
                 }} else null,
                 displays = desktopScreens,
                 supportsCurtainMode = status == SessionStatus.Connected && supportsCurtainMode,
@@ -1825,7 +1848,11 @@ fun SessionScreen(
                 },
                 onComposeClipboardText = { showClipboardDialog = true },
                 scaling = scaling,
-                onScalingSelected = { scaling = it },
+                onScalingSelected = {
+                    scaling = it
+                    zoom = 1f
+                    pan = Offset.Zero
+                },
                 macTarget = isAppleRemote || connection.platform == RemotePlatform.MacOS,
                 onHotCorner = { x, y ->
                     if (!observing && status == SessionStatus.Connected && remoteWidth > 0 && remoteHeight > 0) {
@@ -2346,8 +2373,27 @@ private fun ClipboardComposeDialog(
     )
 }
 
-private const val MAX_ZOOM = 6f
-private const val ZOOM_ACTIVE_EPSILON = 1.01f
+private const val MAX_LOGICAL_ZOOM = 4f
+
+internal data class SessionZoomBounds(val minimum: Float, val actual: Float, val maximum: Float)
+
+internal fun sessionZoomBounds(
+    baseWidthDp: Float,
+    fitWidthDp: Float,
+    remoteWidth: Int,
+    remoteScalePercent: Int,
+): SessionZoomBounds {
+    if (baseWidthDp <= 0f || fitWidthDp <= 0f || remoteWidth <= 0) {
+        return SessionZoomBounds(1f, 1f, MAX_LOGICAL_ZOOM)
+    }
+    val minimum = fitWidthDp / baseWidthDp
+    // The canvas width is already expressed in local, density-independent units.
+    val remoteScale = remoteScalePercent.coerceAtLeast(1) / 100f
+    val actual = (remoteWidth / remoteScale) / baseWidthDp
+    return SessionZoomBounds(minimum, actual, max(minimum, actual * MAX_LOGICAL_ZOOM))
+}
+
+private const val ZOOM_ACTIVE_EPSILON = 1.001f
 private const val PINCH_ZOOM_EPSILON = 0.08f
 private const val TAP_TIMEOUT_MS = 500L
 private const val IME_OPEN_GRACE_MS = 1200L
@@ -2480,7 +2526,6 @@ internal fun trackpadPan(pointer: Offset, zoom: Float, band: IntSize, screen: In
 }
 
 private fun clampPan(value: Offset, zoom: Float, band: IntSize, screen: IntSize): Offset {
-    if (zoom <= ZOOM_ACTIVE_EPSILON) return Offset.Zero
     val safeZoom = zoom
     // When the band covers the screen, keep its edges outside; when it is
     // smaller, let it move inside so a pinch stays anchored between the fingers

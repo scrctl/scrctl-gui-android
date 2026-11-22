@@ -27,4 +27,13 @@ class TrackpadPanTest {
         )
         assertArrayEquals(intArrayOf(140, 180, 500, 500), rect)
     }
+
+    @Test
+    fun fillFitsEntireDesktopAndCapsAtFourTimesTheRemoteLogicalWidth() {
+        val bounds = sessionZoomBounds(800f, 400f, 1200, 200)
+        assertEquals(SessionZoomBounds(0.5f, 0.75f, 3f), bounds)
+        assertEquals(400f, 800f * bounds.minimum)
+        assertEquals(600f, 800f * bounds.actual)
+        assertEquals(2400f, 800f * bounds.maximum)
+    }
 }

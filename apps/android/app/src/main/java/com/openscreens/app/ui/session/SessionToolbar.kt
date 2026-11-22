@@ -87,6 +87,7 @@ internal fun SessionToolbar(
     pointerMode: SessionPointerMode,
     onPointerModeSelected: (SessionPointerMode) -> Unit,
     onResetZoom: (() -> Unit)?,
+    onActualSize: (() -> Unit)?,
     vertical: Boolean,
     displays: List<DisplayScreen>,
     supportsCurtainMode: Boolean,
@@ -223,7 +224,8 @@ internal fun SessionToolbar(
                     if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
                     onClick = onToggleFullscreen,
                 ))
-                onResetZoom?.let { add(SessionAction(stringResource(R.string.session_reset_zoom), onClick = it)) }
+                onActualSize?.let { add(SessionAction(stringResource(R.string.session_actual_size), onClick = it)) }
+                onResetZoom?.let { add(SessionAction(stringResource(R.string.session_fit_desktop), onClick = it)) }
                 add(SessionAction(stringResource(R.string.session_quality), sectionHeader = true))
                 addAll(QualityPreset.entries.map { preset ->
                     SessionAction(preset.label(), enabled = connected && !changingQuality, checked = preset == quality, onClick = { onQualitySelected(preset) })
