@@ -2,17 +2,7 @@ name: GUI Android
 
 on:
   push:
-    paths:
-      - 'apps/android/**'
-      - 'scripts/build-android-core.sh'
-      - 'vendor/scrctl'
-      - 'xdb'
-      - 'android-common/**'
-      - 'app/src/main/cpp/**'
-      - 'CMakeLists.txt'
-      - 'tools/build_native.py'
-      - '.gitmodules'
-      - '.github/workflows/gui-android.yml'
+    branches: [main]
   pull_request:
     paths:
       - 'apps/android/**'
@@ -24,7 +14,7 @@ on:
       - 'CMakeLists.txt'
       - 'tools/build_native.py'
       - '.gitmodules'
-      - '.github/workflows/gui-android.yml'
+      - '.github/workflows/gui-android*.yml'
   workflow_dispatch:
 
 permissions:
@@ -88,3 +78,13 @@ jobs:
         with:
           name: ScrctlGui-android-pr-debug-${{ matrix.variant }}
           path: ScrctlGui-android-${{ matrix.variant }}-debug.apk
+
+  snapshot:
+    needs: android
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/gui-android-release.yml
+    permissions:
+      contents: write
+    with:
+      snapshot: true
+    secrets: inherit

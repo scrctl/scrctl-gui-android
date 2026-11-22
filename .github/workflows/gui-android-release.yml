@@ -4,16 +4,25 @@ on:
   push:
     tags:
       - "v*"
+  workflow_call:
+    inputs:
+      snapshot:
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.snapshot && 'snapshot' || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   android:
+    if: >-
+      github.event_name == 'push' &&
+      ((inputs.snapshot && github.ref == 'refs/heads/main') ||
+       (!inputs.snapshot && startsWith(github.ref, 'refs/tags/v')))
     runs-on: ubuntu-latest
     environment: Release
     env:
@@ -36,16 +45,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: vendor/scrctl/core
-      - name: Build Android core
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-          cargo install cargo-ndk --locked --version 4.1.2
-          ./scripts/build-android-core.sh
       - name: Require release signing
         if: env.HAS_ANDROID_KEYSTORE != 'true'
         run: |
           echo "Configure the RELEASE_ANDROID signing secrets in the Release environment before publishing." >&2
           exit 1
+      - name: Build Android core
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          cargo install cargo-ndk --locked --version 4.1.2
+          ./scripts/build-android-core.sh
       - name: Configure release signing
         working-directory: apps/android
         env:
@@ -54,9 +63,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.RELEASE_ANDROID_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_ANDROID_KEY_ALIAS }}
         run: |
+          umask 077
           mkdir -p keystore
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
-          umask 077
           cat > keystore.properties <<EOF
           storeFile=keystore/release.jks
           storePassword=$STORE_PASSWORD
@@ -65,10 +74,17 @@ jobs:
           EOF
       - name: Build signed release APK
         working-directory: apps/android
+        env:
+          IS_SNAPSHOT: ${{ inputs.snapshot || false }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          marketing="${tag#v}"
+          version_tag="$tag"
+          if [[ "$IS_SNAPSHOT" == true ]]; then
+            tag=snapshot
+            version_tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0)"
+          fi
+          marketing="${version_tag#v}"
           marketing="${marketing%%-*}"
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon \
@@ -77,6 +93,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk \
             "$GITHUB_WORKSPACE/ScrctlGui-${tag}-android.apk"
       - name: Publish signed Android release
+        if: ${{ !inputs.snapshot }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -86,3 +103,28 @@ jobs:
           if [[ "$tag" == *-* ]]; then extra+=(--prerelease); fi
           gh release create "$tag" "ScrctlGui-${tag}-android.apk" \
             --title "ScrctlGui ${tag#v}" --generate-notes --verify-tag "${extra[@]}"
+      - name: Publish signed Android snapshot
+        if: inputs.snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_ref="$(git ls-remote --exit-code origin refs/heads/main)"
+          if [[ "${main_ref%%$'\t'*}" != "$GITHUB_SHA" ]]; then
+            echo "A newer main commit is available. Skipping this snapshot."
+            exit 0
+          fi
+
+          apk=ScrctlGui-snapshot-android.apk
+          title="Development snapshot ${GITHUB_SHA:0:7}"
+          notes="Signed Android build from \`$GITHUB_SHA\`."
+          if gh release view snapshot --json tagName >/dev/null 2>&1; then
+            previous_ref="$(git ls-remote --exit-code origin refs/tags/snapshot)"
+            previous_sha="${previous_ref%%$'\t'*}"
+            git push --force-with-lease="refs/tags/snapshot:$previous_sha" origin "$GITHUB_SHA:refs/tags/snapshot"
+            gh release upload snapshot "$apk" --clobber
+            gh release edit snapshot --title "$title" --notes "$notes" --prerelease
+          else
+            gh release create snapshot "$apk" --target "$GITHUB_SHA" \
+              --title "$title" --notes "$notes" --prerelease
+          fi
