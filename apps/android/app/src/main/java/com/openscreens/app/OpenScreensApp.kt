@@ -18,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openscreens.app.data.Connection
 import com.openscreens.app.data.ThemeMode
+import com.openscreens.app.ios.rememberIphoneIntegration
+import com.openscreens.app.data.NearbyDevice
 import com.openscreens.app.ui.editor.ConnectionEditorScreen
 import com.openscreens.app.ui.library.LibraryScreen
 import com.openscreens.app.ui.session.SessionScreen
@@ -42,6 +44,9 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
 
     val context = LocalContext.current
     val libraryState = rememberSaveableStateHolder()
+    val iphone = rememberIphoneIntegration(settings.discoverNearby && route == Route.Library)
+    val nearbyDevices = (nearby.map { NearbyDevice.Vnc(it) } + iphone?.discovery?.devices.orEmpty())
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
     OpenScreensTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -56,7 +61,8 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                         previews = viewModel.previews,
                         onDeleteConnection = viewModel::deleteConnection,
                         groups = groups,
-                        nearby = nearby,
+                        nearby = nearbyDevices,
+                        iphone = iphone,
                         discoverNearby = settings.discoverNearby,
                         sort = settings.librarySort,
                         onSortChange = viewModel::setLibrarySort,
@@ -84,11 +90,18 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                         onQuickConnect = { host, port, username ->
                             viewModel.openEndpoint(Connection(name = host, host = host, port = port, username = username.orEmpty()))
                         },
-                        onOpenNearby = { server ->
-                            viewModel.openEndpoint(Connection(name = server.name, host = server.host, port = server.port), nearby = true)
+                        onOpenNearby = { device ->
+                            when (device) {
+                                is NearbyDevice.Vnc -> with(device.server) {
+                                    viewModel.openEndpoint(Connection(name = name, host = host, port = port), nearby = true)
+                                }
+                                is NearbyDevice.Iphone -> viewModel.navigate(Route.IphoneSession(device))
+                            }
                         },
                     )
                 }
+
+                is Route.IphoneSession -> iphone?.session?.invoke(current.device, viewModel::back)
 
                 Route.Settings -> SettingsScreen(
                     settings = settings,

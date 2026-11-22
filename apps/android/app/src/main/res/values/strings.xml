@@ -50,12 +50,11 @@
     <string name="library_tab_library">Library</string>
     <string name="library_nearby_title">Nearby</string>
     <string name="library_nearby_count">%1$d nearby</string>
-    <string name="library_nearby_empty_title">No nearby computers</string>
-    <string name="library_nearby_empty_body">Computers sharing their screen on this network appear here.</string>
+    <string name="library_nearby_empty_title">No nearby devices</string>
+    <string name="library_nearby_empty_body">Devices sharing their screen on this network appear here.</string>
     <string name="library_nearby_off_title">Nearby discovery is off</string>
-    <string name="library_nearby_off_body">Turn on discovery in Settings to find computers on your local network.</string>
+    <string name="library_nearby_off_body">Turn on discovery in Settings to find devices on your local network.</string>
     <string name="library_nearby_off_action">Open Settings</string>
-    <string name="library_nearby_open">Open %1$s</string>
 
     <!-- Connection editor -->
     <string name="editor_new_title">New connection</string>
@@ -264,8 +263,8 @@
     <string name="settings_show_session_previews">Show last session preview</string>
     <string name="settings_show_session_previews_hint">Previews are saved only on this device.</string>
     <string name="settings_library">Library</string>
-    <string name="settings_discover_nearby">Discover nearby computers</string>
-    <string name="settings_discover_nearby_hint">Use Bonjour to find computers sharing their screen on your local network.</string>
+    <string name="settings_discover_nearby">Discover nearby devices</string>
+    <string name="settings_discover_nearby_hint">Find available devices on your local network.</string>
     <string name="settings_ssh_keys">SSH keys</string>
     <string name="settings_ssh_keys_count">%1$d saved</string>
     <string name="settings_manage">Manage</string>
@@ -350,4 +349,11 @@
     <string name="session_actual_size">Actual Size (1:1)</string>
     <string name="session_fit_desktop">Fit Entire Desktop</string>
     <string name="editor_scale_percent">%1$d%%</string>
+    <string name="iphone_back">Back</string>
+    <string name="iphone_refresh">Refresh iPhones</string>
+    <string name="iphone_pair">Pair an iPhone over Wi-Fi</string>
+    <string name="iphone_cancel">Cancel</string>
+    <string name="iphone_pin">Enter this code on the iPhone: %1$s</string>
+    <string name="library_nearby_screen_mirroring">Screen Mirroring</string>
+    <string name="iphone_prepare">Prepare Developer Disk Image</string>
 </resources>

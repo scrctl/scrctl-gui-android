@@ -6,6 +6,11 @@ on:
       - 'apps/android/**'
       - 'scripts/build-android-core.sh'
       - 'vendor/scrctl'
+      - 'xdb'
+      - 'android-common/**'
+      - 'app/src/main/cpp/**'
+      - 'CMakeLists.txt'
+      - 'tools/build_native.py'
       - '.gitmodules'
       - '.github/workflows/gui-android.yml'
   pull_request:
@@ -13,6 +18,11 @@ on:
       - 'apps/android/**'
       - 'scripts/build-android-core.sh'
       - 'vendor/scrctl'
+      - 'xdb'
+      - 'android-common/**'
+      - 'app/src/main/cpp/**'
+      - 'CMakeLists.txt'
+      - 'tools/build_native.py'
       - '.gitmodules'
       - '.github/workflows/gui-android.yml'
   workflow_dispatch:
@@ -23,6 +33,15 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: vnc
+            ndk: '27.2.12479018'
+            xdb: 'false'
+          - variant: xdb-arm64
+            ndk: '29.0.14206865'
+            xdb: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,26 +53,38 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
         with:
-          packages: "platform-tools platforms;android-36 build-tools;35.0.0 ndk;27.2.12479018"
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0 ndk;${{ matrix.ndk }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: vendor/scrctl/core
+          key: ${{ matrix.variant }}
+      - uses: actions/cache@v4
+        if: matrix.xdb == 'true'
+        with:
+          path: |
+            .native/deps
+            .native/src
+          key: gui-xdb-arm64-ndk${{ matrix.ndk }}-${{ hashFiles('tools/build_native.py', 'xdb/tools/android-deps.sh') }}
       - name: Build Android core
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/${{ matrix.ndk }}"
           cargo install cargo-ndk --locked --version 4.1.2
-          ./scripts/build-android-core.sh
+          if [[ '${{ matrix.xdb }}' == 'true' ]]; then
+            ./scripts/build-android-core.sh --xdb
+          else
+            ./scripts/build-android-core.sh
+          fi
       - name: Build and test a debug-signed APK
         working-directory: apps/android
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon
+          ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon -Pscrctl.xdb=${{ matrix.xdb }}
       - name: Name debug APK
-        run: cp apps/android/app/build/outputs/apk/debug/app-debug.apk ScrctlGui-android-debug.apk
+        run: cp apps/android/app/build/outputs/apk/debug/app-debug.apk ScrctlGui-android-${{ matrix.variant }}-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: ScrctlGui-android-pr-debug
-          path: ScrctlGui-android-debug.apk
+          name: ScrctlGui-android-pr-debug-${{ matrix.variant }}
+          path: ScrctlGui-android-${{ matrix.variant }}-debug.apk

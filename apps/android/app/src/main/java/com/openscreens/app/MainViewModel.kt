@@ -8,6 +8,7 @@ import com.openscreens.app.data.matchingEndpoint
 import com.openscreens.app.data.SessionPointerMode
 import com.openscreens.app.data.ConnectionStore
 import com.openscreens.app.data.LibrarySortOrder
+import com.openscreens.app.data.NearbyDevice
 import com.openscreens.app.data.NearbyDiscovery
 import com.openscreens.app.data.NearbyServer
 import com.openscreens.app.data.QualityPreset
@@ -39,7 +40,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val nearby: StateFlow<List<NearbyServer>> = nearbyDiscovery.servers
 
     private val _route = MutableStateFlow<Route>(Route.Library)
-    val route = _route.asStateFlow()
+    internal val route = _route.asStateFlow()
 
     init {
         if (_settings.value.discoverNearby) {
@@ -159,7 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.save(_settings.value)
     }
 
-    fun navigate(route: Route) {
+    internal fun navigate(route: Route) {
         _route.value = route
     }
 
@@ -171,8 +172,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-sealed interface Route {
+internal sealed interface Route {
     data object Library : Route
+    data class IphoneSession(val device: NearbyDevice.Iphone) : Route
     data object Settings : Route
     data object SshKeys : Route
     data class Editor(val connectionId: String?, val draft: Connection? = null) : Route
