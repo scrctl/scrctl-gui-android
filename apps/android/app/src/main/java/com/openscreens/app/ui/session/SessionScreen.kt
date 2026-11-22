@@ -108,6 +108,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -236,6 +237,7 @@ fun SessionScreen(
     var isFullscreen by rememberSaveable { mutableStateOf(true) }
     var isExiting by remember { mutableStateOf(false) }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
+    var bottomBarHeight by remember { mutableIntStateOf(0) }
     var keyboardActive by remember { mutableStateOf(false) }
     var modifiers by remember { mutableIntStateOf(0) }
     var backgroundedAt by remember { mutableLongStateOf(0L) }
@@ -257,7 +259,7 @@ fun SessionScreen(
     var disconnectRequest by remember(session) { mutableStateOf<DisconnectRequest?>(null) }
     var sentFiles by remember { mutableStateOf<List<SessionTransferItem>>(emptyList()) }
     var receivedFiles by remember { mutableStateOf<List<SessionTransferItem>>(emptyList()) }
-    var trackpadPointer by remember { mutableStateOf<IntOffset?>(null) }
+    var trackpadPosition by remember { mutableStateOf(Offset(0.5f, 0.5f)) }
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
     var uploadJob by remember { mutableStateOf<Job?>(null) }
     var uploadLabel by remember { mutableStateOf<String?>(null) }
@@ -330,31 +332,6 @@ fun SessionScreen(
         }
     }
 
-    val togglePointerMode: () -> Unit = {
-        val next = !trackpadMode
-        trackpadMode = next
-        if (next) {
-            val region = frame?.viewport
-            val pointer = trackpadPointer ?: if (region != null) {
-                IntOffset(region.x + region.width / 2, region.y + region.height / 2)
-            } else {
-                IntOffset(remoteWidth / 2, remoteHeight / 2)
-            }
-            trackpadPointer = pointer
-            trackPointer(pointer.x, pointer.y)
-            session.sendPointer(pointer.x, pointer.y, 0)
-        }
-        lastAction = context.getString(
-            R.string.session_action_prefix,
-            context.getString(
-                if (next) {
-                    R.string.session_pointer_trackpad
-                } else {
-                    R.string.session_pointer_direct
-                },
-            ),
-        )
-    }
 
     val imeVisible = WindowInsets.isImeVisible
     // Focus may survive the IME being dismissed with Back. Drop the accessory row shortly
@@ -844,7 +821,8 @@ fun SessionScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(SessionBackdrop),
+            .background(SessionBackdrop)
+            .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         val aspect = if (remoteWidth > 0 && remoteHeight > 0) {
             (remoteWidth.toFloat() / remoteHeight.toFloat()).coerceAtLeast(0.1f)
@@ -852,16 +830,22 @@ fun SessionScreen(
             // Unknown until Connected; keep layout valid (NaN aspectRatio crashes).
             16f / 9f
         }
-        val canvasWidth = min(maxWidth.value, maxHeight.value * aspect).dp
+        val density = LocalDensity.current
+        val bottomInset = if (chromeVisible || keyboardActive) {
+            with(density) { bottomBarHeight.toDp() }.coerceAtMost((maxHeight - 1.dp).coerceAtLeast(0.dp))
+        } else {
+            0.dp
+        }
+        val canvasHeight = maxHeight - bottomInset
+        val canvasWidth = min(maxWidth.value, canvasHeight.value * aspect).dp
 
         // Keep a local crop around the visible region, and ask for a
         // sampling density that matches the current zoom. Debounced so a pinch
         // or pan settles before the region is re-requested.
-        val density = LocalDensity.current
         val canvasPixelWidth = with(density) { canvasWidth.toPx() }
         val canvasPixelHeight = canvasPixelWidth / aspect
         val screenPixelWidth = with(density) { maxWidth.toPx() }
-        val screenPixelHeight = with(density) { maxHeight.toPx() }
+        val screenPixelHeight = with(density) { canvasHeight.toPx() }
         val screenSizePx = IntSize(
             screenPixelWidth.roundToInt(),
             screenPixelHeight.roundToInt(),
@@ -870,6 +854,34 @@ fun SessionScreen(
             canvasPixelWidth.roundToInt(),
             canvasPixelHeight.roundToInt(),
         )
+        val centeredTrackpad = trackpadMode && !observing
+        LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad) {
+            pan = if (centeredTrackpad) {
+                trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+            } else {
+                clampPan(pan, zoom, bandSizePx, screenSizePx)
+            }
+        }
+        val togglePointerMode: () -> Unit = {
+            val next = !trackpadMode
+            trackpadMode = next
+            if (next) {
+                trackpadPosition = Offset(
+                    (0.5f - pan.x / bandSizePx.width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                    (0.5f - pan.y / bandSizePx.height.coerceAtLeast(1)).coerceIn(0f, 1f),
+                )
+            }
+            lastAction = context.getString(
+                R.string.session_action_prefix,
+                context.getString(
+                    if (next) {
+                        R.string.session_pointer_trackpad
+                    } else {
+                        R.string.session_pointer_direct
+                    },
+                ),
+            )
+        }
         LaunchedEffect(
             session,
             status,
@@ -925,9 +937,10 @@ fun SessionScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(bottom = bottomInset)
                 .clipToBounds()
-                // Keep gestures in the same coordinates as the full-screen canvas.
-                .pointerInput(session, remoteWidth, remoteHeight, trackpadMode, zoomEnabled, observing) {
+                // Keep gestures in the same coordinates as the drawable canvas.
+                .pointerInput(session, remoteWidth, remoteHeight, trackpadMode, zoomEnabled, observing, screenSizePx) {
                     if (observing) {
                         if (zoomEnabled && remoteWidth > 1 && remoteHeight > 1) {
                             val center = Offset(size.width / 2f, size.height / 2f)
@@ -955,6 +968,24 @@ fun SessionScreen(
                     val doubleTapSlop = touchSlop * 2.5f
                     val wheelStep = WHEEL_STEP_PX
                     val screenSize = size
+
+                    fun trackpadTarget(): Pair<Int, Int> =
+                        (trackpadPosition.x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1) to
+                            (trackpadPosition.y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
+
+                    fun moveTrackpad(delta: Offset): Pair<Int, Int> {
+                        trackpadPosition = Offset(
+                            (trackpadPosition.x + delta.x / (bandSizePx.width * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
+                            (trackpadPosition.y + delta.y / (bandSizePx.height * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
+                        )
+                        pan = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                        return trackpadTarget()
+                    }
+
+                    fun trackpadPointOnCanvas(): Offset = Offset(
+                        screenSize.width / 2f + (pan.x + (trackpadPosition.x - 0.5f) * bandSizePx.width) * zoom,
+                        screenSize.height / 2f + (pan.y + (trackpadPosition.y - 0.5f) * bandSizePx.height) * zoom,
+                    )
 
                     fun isInsideContent(position: Offset): Boolean {
                         val halfWidth = bandSizePx.width * zoom / 2f
@@ -995,7 +1026,7 @@ fun SessionScreen(
                     }
 
                     fun sendWheel(mask: Int, labelRes: Int) {
-                        val (x, y) = pointerMemory.resolve(remoteWidth, remoteHeight)
+                        val (x, y) = if (trackpadMode) trackpadTarget() else pointerMemory.resolve(remoteWidth, remoteHeight)
                         cursorPosition = IntOffset(x, y)
                         session.sendPointer(x, y, mask)
                         session.sendPointer(x, y, 0)
@@ -1007,7 +1038,7 @@ fun SessionScreen(
 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        val startedOnImage = isInsideContent(down.position)
+                        val startedOnImage = trackpadMode || isInsideContent(down.position)
                         var movedInLetterbox = false
                         val previousTap = taps.pending
                         val isDoubleTap = startedOnImage && previousTap != null &&
@@ -1063,8 +1094,10 @@ fun SessionScreen(
 
                         fun movePress(position: Offset) {
                             currentCentroid = position
-                            pressIndicator = pressIndicator?.copy(position = position)
-                            if (!trackpadMode) {
+                            if (trackpadMode) {
+                                pressTarget = moveTrackpad(position - lastTouch)
+                                lastTouch = position
+                            } else {
                                 pressTarget = remotePoint(
                                     position,
                                     screenSize,
@@ -1075,7 +1108,11 @@ fun SessionScreen(
                                     pan,
                                 )
                             }
+                            pressIndicator = pressIndicator?.copy(
+                                position = if (trackpadMode) trackpadPointOnCanvas() else position,
+                            )
                             session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
+                            trackPointer(pressTarget.first, pressTarget.second)
                             trackPointer(pressTarget.first, pressTarget.second)
                         }
 
@@ -1086,7 +1123,7 @@ fun SessionScreen(
                                 return
                             }
                             if (SystemClock.uptimeMillis() - holdStartedAt < longPressTimeout) return
-                            if (!isInsideContent(currentCentroid)) {
+                            if (!trackpadMode && !isInsideContent(currentCentroid)) {
                                 holdTouches = 0
                                 return
                             }
@@ -1096,16 +1133,7 @@ fun SessionScreen(
                                 else -> 1 shl 1
                             }
                             pressTarget = if (trackpadMode) {
-                                trackpadPointer?.let { it.x to it.y }
-                                    ?: remotePoint(
-                                        currentCentroid,
-                                        screenSize,
-                                        bandSizePx,
-                                        remoteWidth,
-                                        remoteHeight,
-                                        zoom,
-                                        pan,
-                                    )
+                                trackpadTarget()
                             } else {
                                 remotePoint(
                                     currentCentroid,
@@ -1122,8 +1150,9 @@ fun SessionScreen(
                             pressButton = button
                             pressIndicator = PressIndicator(
                                 pressIndicatorColor(button),
-                                currentCentroid,
+                                if (trackpadMode) trackpadPointOnCanvas() else currentCentroid,
                             )
+                            lastTouch = currentCentroid
                             session.sendPointer(pressTarget.first, pressTarget.second, 0)
                             session.sendPointer(pressTarget.first, pressTarget.second, button)
                             trackPointer(pressTarget.first, pressTarget.second)
@@ -1168,21 +1197,16 @@ fun SessionScreen(
                                 screenSizePx,
                             )
                             zoom = if (newZoom <= ZOOM_ACTIVE_EPSILON) 1f else newZoom
-                            pan = newPan
+                            pan = if (trackpadMode) {
+                                trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                            } else {
+                                newPan
+                            }
                         }
 
                         fun scheduleTwoFingerTap(position: Offset) {
                             val target = if (trackpadMode) {
-                                trackpadPointer?.let { it.x to it.y }
-                                    ?: remotePoint(
-                                        position,
-                                        screenSize,
-                                        bandSizePx,
-                                        remoteWidth,
-                                        remoteHeight,
-                                        zoom,
-                                        pan,
-                                    )
+                                trackpadTarget()
                             } else {
                                 remotePoint(
                                     position,
@@ -1452,12 +1476,6 @@ fun SessionScreen(
                             ) {
                                 if (trackpadMode) {
                                     mode = GestureMode.Move
-                                    val pointer = trackpadPointer ?: IntOffset(
-                                        remoteWidth / 2,
-                                        remoteHeight / 2,
-                                    )
-                                    trackpadPointer = pointer
-                                    trackPointer(pointer.x, pointer.y)
                                 } else {
                                     mode = GestureMode.Drag
                                     session.sendPointer(start.first, start.second, 1)
@@ -1481,25 +1499,9 @@ fun SessionScreen(
                             } else if (mode == GestureMode.Move) {
                                 val delta = change.position - lastTouch
                                 lastTouch = change.position
-                                val region = frame?.viewport
-                                val base = trackpadPointer
-                                    ?: IntOffset(remoteWidth / 2, remoteHeight / 2)
-                                // The cursor follows the finger 1:1 on screen, so a
-                                // screen pixel maps to a smaller framebuffer step
-                                // as the image is magnified.
-                                val scaleX = remoteWidth.toFloat() /
-                                    (bandSizePx.width * zoom).coerceAtLeast(1f)
-                                val scaleY = remoteHeight.toFloat() /
-                                    (bandSizePx.height * zoom).coerceAtLeast(1f)
-                                val minX = region?.x ?: 0
-                                val minY = region?.y ?: 0
-                                val maxX = (region?.let { it.x + it.width } ?: remoteWidth) - 1
-                                val maxY = (region?.let { it.y + it.height } ?: remoteHeight) - 1
-                                val nextX = (base.x + delta.x * scaleX).roundToInt().coerceIn(minX, maxX)
-                                val nextY = (base.y + delta.y * scaleY).roundToInt().coerceIn(minY, maxY)
-                                trackpadPointer = IntOffset(nextX, nextY)
-                                trackPointer(nextX, nextY)
-                                session.sendPointer(nextX, nextY, 0)
+                                val (x, y) = moveTrackpad(delta)
+                                trackPointer(x, y)
+                                session.sendPointer(x, y, 0)
                                 change.consume()
                             }
                         }
@@ -1516,14 +1518,14 @@ fun SessionScreen(
                                     if (!movedInLetterbox) chromeVisible = !chromeVisible
                                 } else if (isDoubleTap) {
                                     val target = if (trackpadMode) {
-                                        trackpadPointer?.let { it.x to it.y } ?: start
+                                        trackpadTarget()
                                     } else {
                                         start
                                     }
                                     sendDoubleClick(target.first, target.second)
                                 } else {
                                     val tapTarget = if (trackpadMode) {
-                                        trackpadPointer?.let { it.x to it.y } ?: start
+                                        trackpadTarget()
                                     } else {
                                         start
                                     }
@@ -1551,16 +1553,7 @@ fun SessionScreen(
                                 ) {
                                     if (threeFinger) {
                                         val target = if (trackpadMode) {
-                                            trackpadPointer?.let { it.x to it.y }
-                                                ?: remotePoint(
-                                                    multiTouchStartCentroid,
-                                                    screenSize,
-                                                    bandSizePx,
-                                                    remoteWidth,
-                                                    remoteHeight,
-                                                    zoom,
-                                                    pan,
-                                                )
+                                            trackpadTarget()
                                         } else {
                                             remotePoint(
                                                 multiTouchStartCentroid,
@@ -1627,7 +1620,12 @@ fun SessionScreen(
                         val position = cursorPosition
                         val x = position?.x?.coerceIn(0, remoteWidth - 1)?.toFloat() ?: (remoteWidth * 0.5f)
                         val y = position?.y?.coerceIn(0, remoteHeight - 1)?.toFloat() ?: (remoteHeight * 0.55f)
-                        drawLocalCursor(Offset(origin.x + x * scaleX, origin.y + y * scaleY))
+                        val pointer = if (centeredTrackpad) {
+                            Offset(origin.x + trackpadPosition.x * desktop.width, origin.y + trackpadPosition.y * desktop.height)
+                        } else {
+                            Offset(origin.x + x * scaleX, origin.y + y * scaleY)
+                        }
+                        drawLocalCursor(pointer)
                     }
                 }
             } else {
@@ -1708,6 +1706,7 @@ fun SessionScreen(
                 onHideKeyboard = { keyboardActive = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .onSizeChanged { bottomBarHeight = it.height }
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
@@ -1768,6 +1767,7 @@ fun SessionScreen(
                 onDisconnect = requestExit,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .onSizeChanged { bottomBarHeight = it.height }
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .touchBarrier(),
             )
@@ -2519,6 +2519,15 @@ private fun Modifier.touchBarrier(): Modifier = pointerInput(Unit) {
  * Keeps the pan inside the range where the scaled band still covers the local
  * screen on that axis; content smaller than the screen stays centred.
  */
+internal fun trackpadPan(pointer: Offset, zoom: Float, band: IntSize, screen: IntSize): Offset {
+    fun axis(position: Float, imageSize: Int, screenSize: Int): Float {
+        val limit = (imageSize - screenSize / zoom) / 2f
+        if (limit <= 0f) return 0f
+        return ((0.5f - position) * imageSize).coerceIn(-limit, limit)
+    }
+    return Offset(axis(pointer.x, band.width, screen.width), axis(pointer.y, band.height, screen.height))
+}
+
 private fun clampPan(value: Offset, zoom: Float, band: IntSize, screen: IntSize): Offset {
     if (zoom <= ZOOM_ACTIVE_EPSILON) return Offset.Zero
     val safeZoom = zoom
