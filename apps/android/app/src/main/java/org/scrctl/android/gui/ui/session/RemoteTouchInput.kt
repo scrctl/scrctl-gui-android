@@ -166,9 +166,7 @@ internal fun Modifier.remoteTouchInput(
         val isDoubleTap = startedOnImage && previousTap != null &&
             down.uptimeMillis - previousTap.time <= doubleTapTimeout &&
             (down.position - previousTap.position).getDistance() <= doubleTapSlop
-        if (previousTap != null) {
-            if (isDoubleTap) taps.cancel() else flushPendingTap()
-        }
+        if (previousTap != null) flushPendingTap()
 
         var mode = GestureMode.Pending
         var start = remotePoint(
@@ -241,13 +239,13 @@ internal fun Modifier.remoteTouchInput(
             trackPointer(pressTarget.first, pressTarget.second)
         }
 
-        fun beginPress(now: Long) {
+        fun beginPress(now: Long, immediately: Boolean = false) {
             if (pressActive || holdTouches == 0 ||
                 currentTouches != holdTouches
             ) {
                 return
             }
-            if (now - holdStartedAt < longPressTimeout) return
+            if (!immediately && now - holdStartedAt < longPressTimeout) return
             if (!trackpadMode && !isInsideContent(currentCentroid)) {
                 holdTouches = 0
                 return
@@ -314,11 +312,6 @@ internal fun Modifier.remoteTouchInput(
             session.sendPointer(x, y, mask)
             session.sendPointer(x, y, 0)
             trackPointer(x, y)
-        }
-
-        fun sendDoubleClick(x: Int, y: Int) {
-            sendClick(x, y, 1)
-            sendClick(x, y, 1)
         }
 
         fun applyPinch(centroid: Offset) {
@@ -391,6 +384,8 @@ internal fun Modifier.remoteTouchInput(
             }
             scheduleTwoFingerTap(position)
         }
+
+        if (isDoubleTap) beginPress(down.uptimeMillis, immediately = true)
 
         while (true) {
             val event = try {
@@ -701,20 +696,12 @@ internal fun Modifier.remoteTouchInput(
                 if (hybridMode) viewport.stopRecentering()
                 if (!startedOnImage) {
                     if (!movedInLetterbox) onToggleChrome()
-                } else if (isDoubleTap) {
-                    val target = if (trackpadMode) {
-                        trackpadTarget()
-                    } else {
-                        start
-                    }
-                    sendDoubleClick(target.first, target.second)
                 } else {
                     val tapTarget = if (trackpadMode) {
                         trackpadTarget()
                     } else {
                         start
                     }
-                    // Hold the click briefly so a double tap can click twice.
                     scheduleTap(
                         tapTarget.first,
                         tapTarget.second,
