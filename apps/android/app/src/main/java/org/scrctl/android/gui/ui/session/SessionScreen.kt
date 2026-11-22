@@ -338,12 +338,17 @@ fun SessionScreen(
         if (!isExiting) {
             isExiting = true
             val unfinished = resetTransferProgress()
-            scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-                try {
-                    session.disconnect()
-                } finally {
-                    discardDownload(unfinished)
-                    onExit()
+            if (status == SessionStatus.Connecting && unfinished == null) {
+                session.close()
+                onExit()
+            } else {
+                scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    try {
+                        session.disconnect()
+                    } finally {
+                        discardDownload(unfinished)
+                        onExit()
+                    }
                 }
             }
         }
@@ -805,15 +810,9 @@ fun SessionScreen(
         if (!trackpadMode) pan = Offset.Zero
     }
 
-    val statusText = stringResource(
-        when (status) {
-            SessionStatus.Connecting -> R.string.session_status_connecting
-            SessionStatus.Connected -> R.string.session_waiting_title
-            SessionStatus.Disconnected -> R.string.session_status_disconnected
-            SessionStatus.Failed -> R.string.session_status_error
-        },
-    )
-
+    val waitingForScreen = status == SessionStatus.Connecting ||
+        (status == SessionStatus.Connected && frame == null)
+    val showControls = !waitingForScreen && chromeVisible
 
     // Sticky modifiers are pressed for the duration of one key chord, then released so
     // they cannot get stuck on the remote if the connection drops mid-chord.
@@ -854,12 +853,12 @@ fun SessionScreen(
         }
         val density = LocalDensity.current
         val verticalToolbar = maxWidth > maxHeight && maxHeight < 480.dp
-        val sideInset = if (chromeVisible && !keyboardActive && verticalToolbar) {
+        val sideInset = if (showControls && !keyboardActive && verticalToolbar) {
             with(density) { toolbarWidth.toDp() }.coerceAtMost((maxWidth - 1.dp).coerceAtLeast(0.dp))
         } else {
             0.dp
         }
-        val bottomInset = if (keyboardActive || (chromeVisible && !verticalToolbar)) {
+        val bottomInset = if (keyboardActive || (showControls && !verticalToolbar)) {
             with(density) { bottomBarHeight.toDp() }.coerceAtMost((maxHeight - 1.dp).coerceAtLeast(0.dp))
         } else {
             0.dp
@@ -998,7 +997,15 @@ fun SessionScreen(
                 centeredTrackpad = centeredTrackpad,
                 cursorPosition = { cursorPosition },
                 cursorShape = { cursorShape },
-                statusText = statusText,
+            )
+        }
+
+        if (waitingForScreen && login.challenge == null && !isExiting) {
+            SessionConnectingCard(
+                connected = status == SessionStatus.Connected,
+                endpoint = connection.address,
+                onCancel = exitSession,
+                modifier = Modifier.align(Alignment.Center),
             )
         }
 
@@ -1050,7 +1057,7 @@ fun SessionScreen(
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
-        } else if (chromeVisible) {
+        } else if (showControls) {
             SessionToolbar(
                 toolbarItems = toolbarItems,
                 platform = if (isAppleRemote) RemotePlatform.MacOS else connection.platform,
@@ -1152,7 +1159,7 @@ fun SessionScreen(
                     .absolutePadding(right = if (verticalToolbar) 8.dp else 0.dp, bottom = if (verticalToolbar) 0.dp else 8.dp)
                     .touchBarrier(),
             )
-        } else {
+        } else if (!waitingForScreen) {
             ChromeRestoreButton(
                 onClick = { chromeVisible = true },
                 modifier = Modifier
