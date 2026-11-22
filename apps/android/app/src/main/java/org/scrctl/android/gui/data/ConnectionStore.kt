@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
+import org.scrctl.android.gui.BuildConfig
 
 /**
  * Saved servers, persisted in app-private storage. The JSON payload is encrypted
@@ -31,7 +32,9 @@ class ConnectionStore(
 ) {
     private val file = AtomicFile(File(context.applicationContext.filesDir, "connections.enc"))
     private val loaded = if (initial == null) load() else null
-    private val _connections = MutableStateFlow(initial ?: loaded?.connections ?: sampleConnections())
+    private val _connections = MutableStateFlow(
+        initial ?: loaded?.connections ?: if (BuildConfig.DEBUG) sampleConnections() else emptyList(),
+    )
     val connections: StateFlow<List<Connection>> = _connections.asStateFlow()
     internal val previews = ConnectionPreviewStore(
         File(context.applicationContext.noBackupFilesDir, "connection-previews"),
