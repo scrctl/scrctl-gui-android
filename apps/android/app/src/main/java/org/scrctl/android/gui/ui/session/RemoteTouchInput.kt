@@ -394,7 +394,7 @@ internal fun Modifier.remoteTouchInput(
 
         while (true) {
             val event = try {
-                if (holdTouches > 0) {
+                if (holdTouches > 0 && holdTouches == currentTouches) {
                     val remaining = holdStartedAt + longPressTimeout - SystemClock.uptimeMillis()
                     withTimeoutOrNull(remaining.coerceAtLeast(1L)) { awaitPointerEvent() }
                 } else {
