@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -1086,12 +1087,12 @@ fun SessionScreen(
                         recenterStart = null
                     }
 
-                    fun moveTrackpad(delta: Offset): Pair<Int, Int> {
+                    fun moveTrackpad(delta: Offset, followsCursor: Boolean = true): Pair<Int, Int> {
                         trackpadPosition = Offset(
                             (trackpadPosition.x + delta.x / (bandSizePx.width * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
                             (trackpadPosition.y + delta.y / (bandSizePx.height * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
                         )
-                        followTrackpad()
+                        if (followsCursor) followTrackpad()
                         return trackpadTarget()
                     }
 
@@ -1187,7 +1188,7 @@ fun SessionScreen(
 
                         // Long press holds a button down for dragging: one finger
                         // holds the left button, two the right, three the middle.
-                        // Movement or a change in finger count cancels it.
+                        // Movement or a change in finger count cancels a pending hold.
                         var holdTouches = if (startedOnImage) 1 else 0
                         var holdStartedAt = down.uptimeMillis
                         var holdAnchor = down.position
@@ -1197,6 +1198,8 @@ fun SessionScreen(
                         var pressTouches = 0
                         var pressButton = 0
                         var pressTarget = start
+                        var heldTransformActive = false
+                        var heldDragNavigated = false
                         var threeFingerSwipe: SwipeDirection? = null
                         var threeFingerStart = Offset.Zero
 
@@ -1220,7 +1223,6 @@ fun SessionScreen(
                                 position = if (trackpadMode) trackpadPointOnCanvas() else position,
                             )
                             session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
-                            trackPointer(pressTarget.first, pressTarget.second)
                             trackPointer(pressTarget.first, pressTarget.second)
                         }
 
@@ -1251,6 +1253,12 @@ fun SessionScreen(
                                     remoteHeight,
                                     zoom,
                                     pan,
+                                )
+                            }
+                            if (!trackpadMode && button == 1) {
+                                trackpadPosition = Offset(
+                                    pressTarget.first.toFloat() / remoteWidth,
+                                    pressTarget.second.toFloat() / remoteHeight,
                                 )
                             }
                             pressActive = true
@@ -1290,7 +1298,7 @@ fun SessionScreen(
                             sendClick(x, y, 1)
                         }
 
-                        fun applyPinch(centroid: Offset) {
+                        fun applyPinch(centroid: Offset, followsCursor: Boolean = true) {
                             if (hybridMode) stopHybridRecentering()
                             val newZoom = (multiTouchStartZoom * multiTouchZoom)
                                 .coerceIn(minimumZoom, maximumZoom)
@@ -1306,7 +1314,7 @@ fun SessionScreen(
                             zoom = newZoom
                             pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
                                 Offset.Zero
-                            } else if (trackpadMode) {
+                            } else if (followsCursor && trackpadMode) {
                                 trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
                             } else {
                                 newPan
@@ -1364,16 +1372,58 @@ fun SessionScreen(
                         }
 
                         while (true) {
-                            val event = withTimeoutOrNull(50L) { awaitPointerEvent() }
+                            val event = try {
+                                withTimeoutOrNull(50L) { awaitPointerEvent() }
+                            } catch (cancelled: CancellationException) {
+                                endPress()
+                                throw cancelled
+                            }
                             if (event == null) {
                                 // Fingers held still produce no events: this is
                                 // where the long-press timer actually fires.
                                 beginPress()
                                 continue
                             }
-                            if (event.changes.any { it.pressed }) beginPress()
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.isEmpty()) break
+                            if (pressed.size == currentTouches) beginPress()
+                            if (pressActive && pressButton == 1) {
+                                if (pressed.size >= 2) {
+                                    val centroid = event.calculateCentroid()
+                                    val touchSetChanged = event.changes.any { it.pressed != it.previousPressed }
+                                    if (!heldTransformActive || touchSetChanged) {
+                                        multiTouchStartZoom = zoom
+                                        multiTouchStartPan = pan
+                                        multiTouchStartCentroid = pressed.fold(Offset.Zero) { sum, pointer ->
+                                            sum + pointer.position
+                                        } / pressed.size.toFloat()
+                                        multiTouchZoom = 1f
+                                        heldTransformActive = true
+                                    } else if (pressed.size == 2 && zoomEnabled) {
+                                        val scale = event.calculateZoom()
+                                        if (scale != 1f || event.calculatePan() != Offset.Zero) {
+                                            heldDragNavigated = true
+                                            multiTouchZoom *= scale
+                                            applyPinch(centroid, followsCursor = false)
+                                        }
+                                    }
+                                } else {
+                                    val finger = pressed.single()
+                                    val delta = finger.position - finger.previousPosition
+                                    if (!heldTransformActive && finger.previousPressed && delta != Offset.Zero) {
+                                        pressTarget = moveTrackpad(
+                                            delta,
+                                            followsCursor = trackpadMode && !heldDragNavigated,
+                                        )
+                                        session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
+                                        trackPointer(pressTarget.first, pressTarget.second)
+                                    }
+                                    heldTransformActive = false
+                                }
+                                pressIndicator = pressIndicator?.copy(position = trackpadPointOnCanvas())
+                                event.changes.forEach { it.consume() }
+                                continue
+                            }
                             if (pressActive && pressed.size < pressTouches) break
                             if (mode == GestureMode.Transform && pressed.size < 2) break
                             if (mode == GestureMode.TwoFinger && pressed.size < 2) break
