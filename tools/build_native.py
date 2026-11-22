@@ -33,7 +33,9 @@ def main():
     for name in ['avcodec','avutil','swscale']:
         flags.append(f'-DXDB_{name.upper()}_LIBRARY={deps}/lib/lib{name}.so')
     run('cmake','-S',ROOT,'-B',ROOT/'.native/build','-G','Ninja',*flags)
-    run('cmake','--build',ROOT/'.native/build','--parallel','4')
+    # The JNI target also builds both XDB libraries. The default target can
+    # build unused C++ modules against the runner's host standard library.
+    run('cmake', '--build', ROOT/'.native/build', '--parallel', '4', '--target', 'scrctl_jni')
     target=ROOT/'app/build/native-libs/arm64-v8a';target.mkdir(parents=True,exist_ok=True)
     # Package one shared C++ runtime for all native DSOs.
     libraries=[ROOT/'.native/build/libscrctl_jni.so', ROOT/'.native/build/xdb/libxdb_client.so',
