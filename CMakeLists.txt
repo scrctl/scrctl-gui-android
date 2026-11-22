@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.22)
 project(scrctl_android LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# These targets use headers. Avoid scanning host standard library modules
+# when cross-compiling Android dependencies with newer CMake versions.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(XDB_BUILD_SERVER ON CACHE BOOL "" FORCE)
 set(XDB_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(XDB_INSTALL OFF CACHE BOOL "" FORCE)
