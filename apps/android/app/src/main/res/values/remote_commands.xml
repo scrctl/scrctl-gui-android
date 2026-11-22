@@ -1,5 +1,5 @@
 <resources>
-    <string name="remote_commands">Remote commands</string>
+    <string name="remote_commands">Remote Commands</string>
     <string name="remote_platform">Remote operating system: %1$s</string>
     <string name="remote_platform_other">Other</string>
     <string name="command_mission_control">Mission Control</string>

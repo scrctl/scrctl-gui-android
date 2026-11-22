@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,8 +63,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.KeyboardHide
 import androidx.compose.material.icons.outlined.Monitor
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledTonalIconButton
@@ -147,6 +146,7 @@ import com.openscreens.app.R
 import com.openscreens.app.data.Connection
 import com.openscreens.app.data.DisconnectAction
 import com.openscreens.app.data.QualityPreset
+import com.openscreens.app.data.RemotePlatform
 import com.openscreens.app.data.SessionPointerMode
 import com.openscreens.app.data.SshKey
 import com.openscreens.app.session.ClipboardEncodingException
@@ -231,13 +231,14 @@ fun SessionScreen(
         )
     }
     var clipboardFetch by remember(session) { mutableStateOf<Job?>(null) }
-    var fetchAfterDialog by remember(session) { mutableStateOf(false) }
+    var clipboardFetchRequested by remember(session) { mutableStateOf(false) }
+    var clipboardSendRequested by remember(session) { mutableStateOf(false) }
 
     var status by remember { mutableStateOf(SessionStatus.Connecting) }
     var remoteWidth by remember { mutableIntStateOf(0) }
     var remoteHeight by remember { mutableIntStateOf(0) }
     var frame by remember { mutableStateOf<SessionEvent.Frame?>(null) }
-    var lastAction by remember { mutableStateOf<String?>(null) }
+    var scaling by rememberSaveable { mutableStateOf(SessionScaling.Fit) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var pressIndicator by remember { mutableStateOf<PressIndicator?>(null) }
@@ -336,7 +337,6 @@ fun SessionScreen(
             modifiers = 0
             showClipboardDialog = false
             pressIndicator = null
-            lastAction = null
             taps.cancel()
             val pending = pendingUpload
             pendingUpload = null
@@ -449,10 +449,7 @@ fun SessionScreen(
                 session.sendClipboard(text, automatic = true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                lastAction = context.getString(
-                    if (error is ClipboardEncodingException) R.string.session_clipboard_latin1_only
-                    else R.string.session_clipboard_send_failed,
-                )
+                Log.d("SessionScreen", "Automatic clipboard send failed (${error.javaClass.simpleName})")
             }
         }
     }
@@ -471,7 +468,8 @@ fun SessionScreen(
                     needsMacSessionChoice = false
                     supportsCurtainMode = false
                     clipboard.reset()
-                    fetchAfterDialog = false
+                    clipboardFetchRequested = false
+                    clipboardSendRequested = false
                     clipboardFetch?.cancel()
                     showClipboardDialog = false
                     status = SessionStatus.Connecting
@@ -577,9 +575,7 @@ fun SessionScreen(
                 is SessionEvent.RemoteClipboard -> {
                     val requested = clipboardFetch?.isActive == true
                     clipboardFetch?.cancel()
-                    if (clipboard.receive(event.text, view.hasWindowFocus(), requested)) {
-                        lastAction = context.getString(R.string.session_clipboard_received)
-                    }
+                    clipboard.receive(event.text, view.hasWindowFocus(), requested)
                 }
                 SessionEvent.ClipboardRequest -> shareLocalText()
                 is SessionEvent.DownloadProgress -> {
@@ -636,7 +632,8 @@ fun SessionScreen(
                 is SessionEvent.Disconnected -> {
                     disconnectRequest = null
                     clipboard.reset()
-                    fetchAfterDialog = false
+                    clipboardFetchRequested = false
+                    clipboardSendRequested = false
                     clipboardFetch?.cancel()
                     showClipboardDialog = false
                     status = SessionStatus.Disconnected
@@ -647,7 +644,8 @@ fun SessionScreen(
                 is SessionEvent.Failed -> {
                     disconnectRequest = null
                     clipboard.reset()
-                    fetchAfterDialog = false
+                    clipboardFetchRequested = false
+                    clipboardSendRequested = false
                     clipboardFetch?.cancel()
                     showClipboardDialog = false
                     status = SessionStatus.Failed
@@ -667,29 +665,62 @@ fun SessionScreen(
         onDispose { if (listen) manager?.removePrimaryClipChangedListener(listener) }
     }
 
-    // The clipboard dialog owns a separate window. Start the pull once its
-    // dismissal has returned focus, so even an immediate reply can be copied.
+    fun sendClipboardText(text: String?) {
+        val content = text ?: clipboard.localText()
+        scope.launch {
+            if (content.isNullOrEmpty()) {
+                snackbarHostState.showSnackbar(context.getString(R.string.session_clipboard_empty))
+                return@launch
+            }
+            try {
+                session.sendClipboard(content)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                val message = if (error is ClipboardEncodingException) R.string.session_clipboard_latin1_only
+                    else R.string.session_clipboard_send_failed
+                snackbarHostState.showSnackbar(context.getString(message))
+            }
+        }
+    }
+
+    fun setClipboardSharing(enabled: Boolean) {
+        clipboard.shared = enabled
+        clipboardSharing = enabled
+        scope.launch {
+            try {
+                session.setClipboardSharing(enabled)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                snackbarHostState.showSnackbar(context.getString(R.string.session_clipboard_settings_failed))
+            }
+        }
+    }
+
+    // A popup owns its own window. Wait for the session to regain focus before
+    // requesting the clipboard so an immediate reply can be copied.
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(session, fetchAfterDialog, windowFocused, showClipboardDialog) {
-        if (!fetchAfterDialog || showClipboardDialog || !windowFocused || !view.hasWindowFocus()) {
+    LaunchedEffect(session, clipboardSendRequested, windowFocused) {
+        if (!clipboardSendRequested || !windowFocused || !view.hasWindowFocus()) return@LaunchedEffect
+        clipboardSendRequested = false
+        if (status == SessionStatus.Connected && !observing) sendClipboardText(null)
+    }
+    LaunchedEffect(session, clipboardFetchRequested, windowFocused, showClipboardDialog) {
+        if (!clipboardFetchRequested || showClipboardDialog || !windowFocused || !view.hasWindowFocus()) {
             return@LaunchedEffect
         }
-        fetchAfterDialog = false
+        clipboardFetchRequested = false
         if (status != SessionStatus.Connected) return@LaunchedEffect
         clipboardFetch = scope.launch {
             try {
                 if (session.requestClipboard()) {
                     delay(5_000)
-                    lastAction = context.getString(R.string.session_clipboard_no_reply)
-                } else if (view.hasWindowFocus()) {
-                    lastAction = context.getString(
-                        if (clipboard.copyLatest()) R.string.session_clipboard_copied_latest
-                        else R.string.session_clipboard_copy_first,
-                    )
+                    snackbarHostState.showSnackbar(context.getString(R.string.session_clipboard_no_reply))
+                } else if (view.hasWindowFocus() && !clipboard.copyLatest()) {
+                    snackbarHostState.showSnackbar(context.getString(R.string.session_clipboard_copy_first))
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                lastAction = context.getString(R.string.session_clipboard_fetch_failed)
+                snackbarHostState.showSnackbar(context.getString(R.string.session_clipboard_fetch_failed))
             }
         }
     }
@@ -705,7 +736,8 @@ fun SessionScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    fetchAfterDialog = false
+                    clipboardFetchRequested = false
+                    clipboardSendRequested = false
                     clipboardFetch?.cancel()
                 }
                 Lifecycle.Event.ON_STOP -> {
@@ -813,17 +845,12 @@ fun SessionScreen(
         sendChord(keysym, active.map { it.keysym }, session::sendKey)
     }
 
-    val sendLabelledKey: (Int, String) -> Unit = { keysym, label ->
-        sendKeysym(keysym)
-        lastAction = context.getString(
-            R.string.session_action_prefix,
-            context.getString(R.string.session_key_sent, label),
-        )
-    }
-
     val selectQuality: (QualityPreset) -> Unit = { preset ->
-        onQualityChange(preset)
-        session.setQuality(preset)
+        if (preset != quality) {
+            onQualityChange(preset)
+            session.setQuality(preset)
+            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.session_quality_next_connection)) }
+        }
     }
 
     BoxWithConstraints(
@@ -852,7 +879,10 @@ fun SessionScreen(
         }
         val canvasHeight = maxHeight - bottomInset
         val availableWidth = maxWidth - sideInset
-        val canvasWidth = min(availableWidth.value, canvasHeight.value * aspect).dp
+        val canvasWidth = when (scaling) {
+            SessionScaling.Fit -> min(availableWidth.value, canvasHeight.value * aspect)
+            SessionScaling.Fill -> max(availableWidth.value, canvasHeight.value * aspect)
+        }.dp
         val safeDrawing = WindowInsets.safeDrawing
         val layoutDirection = LocalLayoutDirection.current
 
@@ -882,6 +912,8 @@ fun SessionScreen(
         )
         val centeredTrackpad = trackpadMode && !observing
         LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad) {
+            recenterJob?.cancel()
+            recenterStart = null
             pan = if (centeredTrackpad) {
                 trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
             } else {
@@ -958,7 +990,7 @@ fun SessionScreen(
                 .absolutePadding(right = sideInset, bottom = bottomInset)
                 // Gesture coordinates use the safe layout. The desktop draw
                 // can overflow it into the remaining window area.
-                .pointerInput(session, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing, screenSizePx) {
+                .pointerInput(session, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing, screenSizePx, bandSizePx) {
                     if (observing) {
                         if (zoomEnabled && remoteWidth > 1 && remoteHeight > 1) {
                             val center = Offset(size.width / 2f, size.height / 2f)
@@ -1071,15 +1103,11 @@ fun SessionScreen(
                         }
                     }
 
-                    fun sendWheel(mask: Int, labelRes: Int) {
+                    fun sendWheel(mask: Int) {
                         val (x, y) = if (trackpadMode) trackpadTarget() else pointerMemory.resolve(remoteWidth, remoteHeight)
                         cursorPosition = IntOffset(x, y)
                         session.sendPointer(x, y, mask)
                         session.sendPointer(x, y, 0)
-                        lastAction = context.getString(
-                            R.string.session_action_prefix,
-                            context.getString(labelRes),
-                        )
                     }
 
                     awaitEachGesture {
@@ -1446,11 +1474,6 @@ fun SessionScreen(
                                                 // Natural touch scrolling: content follows fingers.
                                                 sendWheel(
                                                     if (fingersUp) WHEEL_DOWN else WHEEL_UP,
-                                                    if (fingersUp) {
-                                                        R.string.session_scroll_down
-                                                    } else {
-                                                        R.string.session_scroll_up
-                                                    },
                                                 )
                                                 scrollAccum = Offset(
                                                     scrollAccum.x,
@@ -1461,11 +1484,6 @@ fun SessionScreen(
                                                 val fingersLeft = scrollAccum.x < 0f
                                                 sendWheel(
                                                     if (fingersLeft) WHEEL_RIGHT else WHEEL_LEFT,
-                                                    if (fingersLeft) {
-                                                        R.string.session_scroll_right
-                                                    } else {
-                                                        R.string.session_scroll_left
-                                                    },
                                                 )
                                                 scrollAccum = Offset(
                                                     scrollAccum.x -
@@ -1701,16 +1719,6 @@ fun SessionScreen(
             )
         }
 
-        lastAction?.let { action ->
-            InputBadge(
-                text = action,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(12.dp),
-            )
-        }
-
         val transferLabels = listOfNotNull(uploadLabel, downloadLabel)
         if (transferLabels.isNotEmpty()) {
             Surface(
@@ -1733,7 +1741,7 @@ fun SessionScreen(
             SessionKeyboardBar(
                 modifiers = modifiers,
                 onToggleModifier = { flag -> modifiers = modifiers xor flag },
-                onKey = sendLabelledKey,
+                onKey = { keysym, _ -> sendKeysym(keysym) },
                 onHideKeyboard = { keyboardActive = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1747,10 +1755,6 @@ fun SessionScreen(
                 onCommand = { command ->
                     if (!observing && status == SessionStatus.Connected) {
                         sendChord(command.keysym, command.modifiers, session::sendKey)
-                        lastAction = context.getString(
-                            R.string.session_key_sent,
-                            context.getString(command.title),
-                        )
                     }
                 },
                 observing = observing,
@@ -1791,7 +1795,31 @@ fun SessionScreen(
                 },
                 onKeyboard = { keyboardActive = true },
                 connected = status == SessionStatus.Connected,
-                onClipboard = { showClipboardDialog = true },
+                clipboardSharing = clipboardSharing,
+                onClipboardSharingChange = ::setClipboardSharing,
+                onSendClipboard = { clipboardSendRequested = true },
+                onCopyClipboard = {
+                    clipboardFetch?.cancel()
+                    clipboardFetchRequested = true
+                },
+                onComposeClipboardText = { showClipboardDialog = true },
+                scaling = scaling,
+                onScalingSelected = { scaling = it },
+                macTarget = connection.platform == RemotePlatform.MacOS || connection.requestMacSharing || supportsCurtainMode,
+                onHotCorner = { x, y ->
+                    if (!observing && status == SessionStatus.Connected && remoteWidth > 0 && remoteHeight > 0) {
+                        recenterJob?.cancel()
+                        recenterStart = null
+                        val px = (x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1)
+                        val py = (y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
+                        trackPointer(px, py)
+                        if (centeredTrackpad) {
+                            trackpadPosition = Offset(x, y)
+                            pan = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                        }
+                        session.sendPointer(px, py, 0)
+                    }
+                },
                 onUpload = { sendFilePicker.launch(arrayOf("*/*")) },
                 onDownload = { showDownloadDialog = true },
                 canUpload = status == SessionStatus.Connected && pendingUpload == null,
@@ -1948,48 +1976,11 @@ fun SessionScreen(
     }
 
     if (!observing && showClipboardDialog && status == SessionStatus.Connected) {
-        ClipboardDialog(
-            sharing = clipboardSharing,
-            onSharingChange = { enabled ->
-                clipboard.shared = enabled
-                clipboardSharing = enabled
-                scope.launch {
-                    try {
-                        session.setClipboardSharing(enabled)
-                    } catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        lastAction = context.getString(R.string.session_clipboard_settings_failed)
-                    }
-                }
-            },
+        ClipboardComposeDialog(
             onDismiss = { showClipboardDialog = false },
-            onSend = { typed ->
-                val text = typed ?: clipboard.localText()
+            onSend = { text ->
                 showClipboardDialog = false
-                if (text == null) {
-                    lastAction = context.getString(R.string.session_clipboard_empty)
-                } else {
-                    scope.launch {
-                        try {
-                            session.sendClipboard(text)
-                            lastAction = context.resources.getQuantityString(
-                                R.plurals.session_clipboard_sent, text.length, text.length,
-                            )
-                        } catch (error: Exception) {
-                            if (error is CancellationException) throw error
-                            lastAction = context.getString(
-                                if (error is ClipboardEncodingException) R.string.session_clipboard_latin1_only
-                                else R.string.session_clipboard_send_failed,
-                            )
-                        }
-                    }
-                }
-            },
-            onFetch = {
-                showClipboardDialog = false
-                clipboardFetch?.cancel()
-                lastAction = context.getString(R.string.session_clipboard_requesting)
-                fetchAfterDialog = true
+                sendClipboardText(text)
             },
         )
     }
@@ -2106,23 +2097,6 @@ private fun RemoteCanvasPlaceholder(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun InputBadge(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.widthIn(max = 320.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.small,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-        )
     }
 }
 
@@ -2279,7 +2253,7 @@ private fun ChromeRestoreButton(
 ) {
     FilledTonalIconButton(onClick = onClick, modifier = modifier) {
         Icon(
-            imageVector = Icons.Outlined.Visibility,
+            imageVector = Icons.Filled.KeyboardArrowUp,
             contentDescription = stringResource(R.string.session_show_controls),
         )
     }
@@ -2320,56 +2294,31 @@ private fun DownloadDialog(
 }
 
 @Composable
-private fun ClipboardDialog(
-    sharing: Boolean,
-    onSharingChange: (Boolean) -> Unit,
+private fun ClipboardComposeDialog(
     onDismiss: () -> Unit,
-    onSend: (String?) -> Unit,
-    onFetch: () -> Unit,
+    onSend: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.session_clipboard)) },
+        title = { Text(stringResource(R.string.session_clipboard_action)) },
         text = {
-            Column {
-                Row(
-                    Modifier.fillMaxWidth().toggleable(
-                        value = sharing, role = Role.Switch, onValueChange = onSharingChange,
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.editor_shared_clipboard), modifier = Modifier.weight(1f))
-                    Switch(checked = sharing, onCheckedChange = null)
-                }
-                TextButton(onClick = { onSend(null) }) {
-                    Text(stringResource(R.string.session_clipboard_send_local))
-                }
-                TextButton(onClick = onFetch) {
-                    Text(stringResource(R.string.session_clipboard_copy_remote))
-                }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.session_clipboard_hint)) },
-                    minLines = 3,
-                    maxLines = 5,
-                )
-            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.session_clipboard_hint)) },
+                minLines = 3,
+                maxLines = 5,
+            )
         },
         confirmButton = {
-            TextButton(
-                onClick = { onSend(text) },
-                enabled = text.isNotEmpty(),
-            ) {
+            TextButton(onClick = { onSend(text) }, enabled = text.isNotEmpty()) {
                 Text(stringResource(R.string.session_clipboard_action))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.editor_cancel))
-            }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.editor_cancel)) }
         },
     )
 }

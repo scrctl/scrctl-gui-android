@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.KeyboardCommandKey
 import androidx.compose.material.icons.outlined.Monitor
@@ -28,7 +29,7 @@ import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -96,7 +97,15 @@ internal fun SessionToolbar(
     isFullscreen: Boolean,
     onKeyboard: () -> Unit,
     connected: Boolean,
-    onClipboard: () -> Unit,
+    clipboardSharing: Boolean,
+    onClipboardSharingChange: (Boolean) -> Unit,
+    onSendClipboard: () -> Unit,
+    onCopyClipboard: () -> Unit,
+    onComposeClipboardText: () -> Unit,
+    scaling: SessionScaling,
+    onScalingSelected: (SessionScaling) -> Unit,
+    macTarget: Boolean,
+    onHotCorner: (Float, Float) -> Unit,
     onUpload: () -> Unit,
     onDownload: () -> Unit,
     canUpload: Boolean,
@@ -113,6 +122,19 @@ internal fun SessionToolbar(
         Icons.AutoMirrored.Outlined.ExitToApp,
         onClick = onDisconnect,
     )
+    val hide = SessionAction(
+        stringResource(R.string.session_hide_controls),
+        Icons.Filled.KeyboardArrowDown,
+        onClick = onHideChrome,
+    )
+    val commands = SessionAction(
+        stringResource(R.string.remote_commands),
+        Icons.Outlined.KeyboardCommandKey,
+        enabled = connected && !observing,
+        submenu = desktopCommands(platform).map { command ->
+            SessionAction(stringResource(command.title), onClick = { onCommand(command) })
+        },
+    )
     val actions = buildList {
         if (!observing) {
             add(SessionAction(
@@ -128,19 +150,13 @@ internal fun SessionToolbar(
                 },
             ))
         }
-        if (displays.isNotEmpty() || (supportsCurtainMode && !observing)) {
+        if (displays.size > 1 || selectedDisplayId != null) {
             val displayActions = buildList {
-                if (supportsCurtainMode && !observing) {
-                    add(SessionAction(stringResource(R.string.session_enable_curtain), onClick = { onCurtainRequest(true) }))
-                    add(SessionAction(stringResource(R.string.session_disable_curtain), onClick = { onCurtainRequest(false) }))
-                }
-                if (displays.isNotEmpty()) {
-                    add(SessionAction(
-                        stringResource(R.string.session_all_displays),
-                        checked = selectedDisplayId == null,
-                        onClick = { onSelectDisplay(null) },
-                    ))
-                }
+                add(SessionAction(
+                    stringResource(R.string.session_all_displays),
+                    checked = selectedDisplayId == null,
+                    onClick = { onSelectDisplay(null) },
+                ))
                 displays.forEachIndexed { index, screen ->
                     add(SessionAction(
                         stringResource(R.string.session_display_entry, index + 1, screen.width, screen.height),
@@ -153,13 +169,24 @@ internal fun SessionToolbar(
         }
         if (!observing) {
             add(SessionAction(stringResource(R.string.session_keyboard), Icons.Outlined.Keyboard, onClick = onKeyboard))
-            add(SessionAction(
-                stringResource(R.string.session_clipboard),
-                Icons.Outlined.ContentPaste,
-                enabled = connected,
-                onClick = onClipboard,
-            ))
         }
+        add(SessionAction(
+            stringResource(R.string.session_clipboard),
+            Icons.Outlined.ContentPaste,
+            enabled = connected,
+            submenu = buildList {
+                add(SessionAction(stringResource(R.string.session_clipboard_send_local), enabled = !observing, onClick = onSendClipboard))
+                add(SessionAction(stringResource(R.string.session_clipboard_copy_remote), onClick = onCopyClipboard))
+                add(SessionAction(
+                    stringResource(R.string.editor_shared_clipboard),
+                    checked = clipboardSharing,
+                    onClick = { onClipboardSharingChange(!clipboardSharing) },
+                ))
+                if (!observing) {
+                    add(SessionAction(stringResource(R.string.session_clipboard_action), onClick = onComposeClipboardText))
+                }
+            },
+        ))
         add(SessionAction(
             stringResource(R.string.session_file_transfers),
             Icons.Outlined.SwapVert,
@@ -173,6 +200,13 @@ internal fun SessionToolbar(
             stringResource(R.string.session_display_options),
             Icons.Outlined.Tune,
             submenu = buildList {
+                if (supportsCurtainMode && !observing) {
+                    add(SessionAction(stringResource(R.string.session_enable_curtain), onClick = { onCurtainRequest(true) }))
+                    add(SessionAction(stringResource(R.string.session_disable_curtain), onClick = { onCurtainRequest(false) }))
+                }
+                addAll(SessionScaling.entries.map { mode ->
+                    SessionAction(stringResource(mode.label), checked = mode == scaling, onClick = { onScalingSelected(mode) })
+                })
                 add(SessionAction(
                     stringResource(if (isFullscreen) R.string.session_exit_fullscreen else R.string.session_enter_fullscreen),
                     if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
@@ -184,24 +218,29 @@ internal fun SessionToolbar(
                 })
             },
         ))
-        if (!observing) {
+        if (macTarget && !observing) {
             add(SessionAction(
-                stringResource(R.string.remote_commands),
-                Icons.Outlined.KeyboardCommandKey,
+                stringResource(R.string.session_hot_corners),
+                Icons.Outlined.GridView,
                 enabled = connected,
-                submenu = desktopCommands(platform).map { command ->
-                    SessionAction(stringResource(command.title), onClick = { onCommand(command) })
-                },
+                submenu = listOf(
+                    SessionAction(stringResource(R.string.session_top_left), onClick = { onHotCorner(0f, 0f) }),
+                    SessionAction(stringResource(R.string.session_top_right), onClick = { onHotCorner(1f, 0f) }),
+                    SessionAction(stringResource(R.string.session_bottom_left), onClick = { onHotCorner(0f, 1f) }),
+                    SessionAction(stringResource(R.string.session_bottom_right), onClick = { onHotCorner(1f, 1f) }),
+                    SessionAction(stringResource(R.string.session_show_dock), onClick = { onHotCorner(0.5f, 1f) }),
+                ),
             ))
         }
+        add(commands)
         add(SessionAction(
-            stringResource(R.string.session_observe_mode),
+            stringResource(if (observing) R.string.session_observe_on else R.string.session_observe_off),
             Icons.Outlined.Visibility,
             checked = observing,
             onClick = { onObserveModeChange(!observing) },
         ))
         add(SessionAction(stringResource(R.string.session_screenshot), Icons.Outlined.PhotoCamera, onClick = onScreenshot))
-        add(SessionAction(stringResource(R.string.session_hide_controls), Icons.Outlined.VisibilityOff, onClick = onHideChrome))
+        add(hide)
         add(disconnect)
     }
 
@@ -213,7 +252,9 @@ internal fun SessionToolbar(
         val available = (if (vertical) constraints.maxHeight else constraints.maxWidth) - padding
         val inlineCount = sessionToolbarInlineCount(actions.size, available, actionWidth)
         val shown = actions.take(inlineCount).toMutableList()
-        val overflow = actions.drop(inlineCount)
+        val remaining = actions.drop(inlineCount)
+        val firstInOverflow = listOf(commands, hide, disconnect).filter { it in remaining }
+        val overflow = firstInOverflow + (remaining - firstInOverflow.toSet())
         if (overflow.isNotEmpty()) {
             shown += SessionAction(
                 stringResource(R.string.session_more_actions),
@@ -232,6 +273,11 @@ internal fun SessionToolbar(
             }
         }
     }
+}
+
+internal enum class SessionScaling(val label: Int) {
+    Fit(R.string.session_scale_fit),
+    Fill(R.string.session_scale_fill),
 }
 
 private val SessionPointerMode.label: Int
