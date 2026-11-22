@@ -55,6 +55,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connection(id: String): Connection? = connectionStore.find(id)
 
+    fun quickConnect(host: String, port: Int, username: String?) {
+        openEndpoint(Connection(name = host, host = host, port = port, username = username.orEmpty()))
+    }
+
     fun openEndpoint(target: Connection, nearby: Boolean = false) {
         val saved = connections.value.matchingEndpoint(target)
         if (saved == null && !nearby) connectionStore.save(target)

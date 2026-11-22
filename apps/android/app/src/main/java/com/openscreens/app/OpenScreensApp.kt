@@ -87,9 +87,7 @@ fun OpenScreensApp(viewModel: MainViewModel = viewModel()) {
                         onAddConnection = { viewModel.navigate(Route.Editor(connectionId = null)) },
                         onEditConnection = { viewModel.navigate(Route.Editor(it.id)) },
                         onOpenSettings = { viewModel.navigate(Route.Settings) },
-                        onQuickConnect = { host, port, username ->
-                            viewModel.openEndpoint(Connection(name = host, host = host, port = port, username = username.orEmpty()))
-                        },
+                        onQuickConnect = viewModel::quickConnect,
                         onOpenNearby = { device ->
                             when (device) {
                                 is NearbyDevice.Vnc -> with(device.server) {
