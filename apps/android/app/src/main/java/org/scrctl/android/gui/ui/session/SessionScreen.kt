@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -839,7 +840,7 @@ fun SessionScreen(
 
     LaunchedEffect(remoteWidth, remoteHeight) {
         zoom = 1f
-        pan = Offset.Zero
+        if (!trackpadMode) pan = Offset.Zero
     }
 
     val statusText = stringResource(
@@ -939,28 +940,60 @@ fun SessionScreen(
                 safeDrawing.getBottom(density),
         )
         val centeredTrackpad = trackpadMode && !observing
-        LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad, minimumZoom, maximumZoom) {
+
+        fun trackpadPointOnCanvas(): Offset = Offset(
+            screenSizePx.width / 2f + (pan.x + (trackpadPosition.x - 0.5f) * bandSizePx.width) * zoom,
+            screenSizePx.height / 2f + (pan.y + (trackpadPosition.y - 0.5f) * bandSizePx.height) * zoom,
+        )
+
+        fun followTrackpad() {
+            val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+            val start = recenterStart
+            pan = if (start == null) target else start + (target - start) * recenterProgress
+        }
+
+        fun stopRecentering() {
             recenterJob?.cancel()
+            recenterJob = null
             recenterStart = null
+        }
+
+        fun startRecentering() {
+            if (recenterJob?.isActive == true) return
+            val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+            if ((target - pan).getDistance() * zoom < 0.5f) return
+            recenterStart = pan
+            recenterProgress = 0f
+            recenterJob = scope.launch {
+                animate(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = tween(500, easing = Easing { t -> t * t * (3f - 2f * t) }),
+                ) { value, _ ->
+                    recenterProgress = value
+                    followTrackpad()
+                }
+                recenterStart = null
+            }
+        }
+
+        LaunchedEffect(bandSizePx, screenSizePx, centeredTrackpad, minimumZoom, maximumZoom, remoteWidth, remoteHeight) {
+            stopRecentering()
             zoom = zoom.coerceIn(minimumZoom, maximumZoom)
-            pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
-                Offset.Zero
-            } else if (centeredTrackpad) {
-                trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+            if (centeredTrackpad) {
+                startRecentering()
             } else {
-                clampPan(pan, zoom, bandSizePx, screenSizePx)
+                pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) Offset.Zero
+                    else clampPan(pan, zoom, bandSizePx, screenSizePx)
             }
         }
         val selectPointerMode: (SessionPointerMode) -> Unit = { next ->
-            recenterJob?.cancel()
-            recenterStart = null
+            stopRecentering()
             pointerMode = next
             onPointerModeChanged(next)
-            if (next == SessionPointerMode.Trackpad) {
-                trackpadPosition = Offset(
-                    (0.5f - pan.x / bandSizePx.width.coerceAtLeast(1)).coerceIn(0f, 1f),
-                    (0.5f - pan.y / bandSizePx.height.coerceAtLeast(1)).coerceIn(0f, 1f),
-                )
+            if (next == SessionPointerMode.Trackpad && remoteWidth > 0 && remoteHeight > 0) {
+                val (x, y) = pointerMemory.resolve(remoteWidth, remoteHeight)
+                trackpadPosition = Offset(x.toFloat() / remoteWidth, y.toFloat() / remoteHeight)
             }
         }
         LaunchedEffect(
@@ -1058,36 +1091,15 @@ fun SessionScreen(
                         (trackpadPosition.x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1) to
                             (trackpadPosition.y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
 
-                    fun followTrackpad() {
-                        val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
-                        val start = recenterStart
-                        pan = if (start == null) target else start + (target - start) * recenterProgress
-                    }
-
                     fun startHybridRecentering() {
-                        recenterJob?.cancel()
+                        stopRecentering()
                         val (x, y) = pointerMemory.resolve(remoteWidth, remoteHeight)
                         trackpadPosition = Offset(x.toFloat() / remoteWidth, y.toFloat() / remoteHeight)
-                        val target = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
-                        recenterStart = null
-                        if ((target - pan).getDistance() < 0.5f) return
-                        recenterStart = pan
-                        recenterProgress = 0f
-                        recenterJob = scope.launch {
-                            animate(initialValue = 0f, targetValue = 1f, animationSpec = tween(500)) { value, _ ->
-                                recenterProgress = value
-                                followTrackpad()
-                            }
-                            recenterStart = null
-                        }
-                    }
-
-                    fun stopHybridRecentering() {
-                        recenterJob?.cancel()
-                        recenterStart = null
+                        startRecentering()
                     }
 
                     fun moveTrackpad(delta: Offset, followsCursor: Boolean = true): Pair<Int, Int> {
+                        if (followsCursor && centeredTrackpad) startRecentering()
                         trackpadPosition = Offset(
                             (trackpadPosition.x + delta.x / (bandSizePx.width * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
                             (trackpadPosition.y + delta.y / (bandSizePx.height * zoom).coerceAtLeast(1f)).coerceIn(0f, 1f),
@@ -1095,11 +1107,6 @@ fun SessionScreen(
                         if (followsCursor) followTrackpad()
                         return trackpadTarget()
                     }
-
-                    fun trackpadPointOnCanvas(): Offset = Offset(
-                        screenSize.width / 2f + (pan.x + (trackpadPosition.x - 0.5f) * bandSizePx.width) * zoom,
-                        screenSize.height / 2f + (pan.y + (trackpadPosition.y - 0.5f) * bandSizePx.height) * zoom,
-                    )
 
                     fun isInsideContent(position: Offset): Boolean {
                         val halfWidth = bandSizePx.width * zoom / 2f
@@ -1200,7 +1207,6 @@ fun SessionScreen(
                         var pressTarget = start
                         var holdFinger: PointerId? = null
                         var heldTransformStartDistance: Float? = null
-                        var heldDragNavigated = false
                         var threeFingerSwipe: SwipeDirection? = null
                         var threeFingerStart = Offset.Zero
 
@@ -1288,6 +1294,9 @@ fun SessionScreen(
                             trackPointer(pressTarget.first, pressTarget.second)
                             pressActive = false
                             pressIndicator = null
+                            if (centeredTrackpad && (heldTransformStartDistance != null || mode == GestureMode.Transform)) {
+                                startRecentering()
+                            }
                         }
 
                         fun sendClick(x: Int, y: Int, mask: Int) {
@@ -1302,8 +1311,8 @@ fun SessionScreen(
                             sendClick(x, y, 1)
                         }
 
-                        fun applyPinch(centroid: Offset, followsCursor: Boolean = true) {
-                            if (hybridMode) stopHybridRecentering()
+                        fun applyPinch(centroid: Offset) {
+                            stopRecentering()
                             val newZoom = (multiTouchStartZoom * multiTouchZoom)
                                 .coerceIn(minimumZoom, maximumZoom)
                             val newPan = clampPan(
@@ -1318,8 +1327,6 @@ fun SessionScreen(
                             zoom = newZoom
                             pan = if (zoom <= minimumZoom * ZOOM_ACTIVE_EPSILON) {
                                 Offset.Zero
-                            } else if (followsCursor && trackpadMode) {
-                                trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
                             } else {
                                 newPan
                             }
@@ -1410,21 +1417,18 @@ fun SessionScreen(
                                         multiTouchStartCentroid = centroid
                                         heldTransformStartDistance = distance
                                     } else if (zoomEnabled && controls.any { it.position != it.previousPosition }) {
-                                        heldDragNavigated = true
                                         multiTouchZoom = distance / startDistance
-                                        applyPinch(centroid, followsCursor = false)
+                                        applyPinch(centroid)
                                     }
                                 } else {
                                     val wasTransforming = heldTransformStartDistance != null
                                     heldTransformStartDistance = null
+                                    if (wasTransforming && centeredTrackpad) startRecentering()
                                     val finger = controls.singleOrNull()
                                     if (!wasTransforming && !holdChanged && finger != null && finger.previousPressed) {
                                         val delta = finger.position - finger.previousPosition
                                         if (delta != Offset.Zero) {
-                                            pressTarget = moveTrackpad(
-                                                delta,
-                                                followsCursor = trackpadMode && !heldDragNavigated,
-                                            )
+                                            pressTarget = moveTrackpad(delta, followsCursor = trackpadMode)
                                             session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
                                             trackPointer(pressTarget.first, pressTarget.second)
                                         }
@@ -1665,6 +1669,7 @@ fun SessionScreen(
                             }
                         }
 
+                        if (!pressActive && centeredTrackpad && mode == GestureMode.Transform) startRecentering()
                         if (pressActive) {
                             endPress()
                         } else when (mode) {
@@ -1673,7 +1678,7 @@ fun SessionScreen(
                                 trackPointer(last.first, last.second)
                             }
                             GestureMode.Pending -> {
-                                if (hybridMode) stopHybridRecentering()
+                                if (hybridMode) stopRecentering()
                                 if (!startedOnImage) {
                                     if (!movedInLetterbox) chromeVisible = !chromeVisible
                                 } else if (isDoubleTap) {
@@ -1823,9 +1828,10 @@ fun SessionScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset {
+                        val position = if (centeredTrackpad) trackpadPointOnCanvas() else indicator.position
                         IntOffset(
-                            (indicator.position.x - 11.dp.roundToPx()).roundToInt(),
-                            (indicator.position.y - 11.dp.roundToPx()).roundToInt(),
+                            (position.x - 11.dp.roundToPx()).roundToInt(),
+                            (position.y - 11.dp.roundToPx()).roundToInt(),
                         )
                     }
                     .size(22.dp)
@@ -1883,20 +1889,14 @@ fun SessionScreen(
                 onPointerModeSelected = selectPointerMode,
                 vertical = verticalToolbar,
                 onResetZoom = {
-                    recenterJob?.cancel()
-                    recenterStart = null
+                    stopRecentering()
                     zoom = minimumZoom
-                    pan = Offset.Zero
+                    if (centeredTrackpad) startRecentering() else pan = Offset.Zero
                 },
                 onActualSize = if (remoteWidth > 0) {{
-                    recenterJob?.cancel()
-                    recenterStart = null
+                    stopRecentering()
                     zoom = actualSizeZoom.coerceIn(minimumZoom, maximumZoom)
-                    pan = if (centeredTrackpad) {
-                        trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
-                    } else {
-                        Offset.Zero
-                    }
+                    if (centeredTrackpad) startRecentering() else pan = Offset.Zero
                 }} else null,
                 displays = desktopScreens,
                 supportsCurtainMode = status == SessionStatus.Connected && supportsCurtainMode,
@@ -1932,21 +1932,21 @@ fun SessionScreen(
                 onComposeClipboardText = { showClipboardDialog = true },
                 scaling = scaling,
                 onScalingSelected = {
+                    stopRecentering()
                     scaling = it
                     zoom = 1f
-                    pan = Offset.Zero
+                    if (centeredTrackpad) startRecentering() else pan = Offset.Zero
                 },
                 macTarget = isAppleRemote || connection.platform == RemotePlatform.MacOS,
                 onHotCorner = { x, y ->
                     if (!observing && status == SessionStatus.Connected && remoteWidth > 0 && remoteHeight > 0) {
-                        recenterJob?.cancel()
-                        recenterStart = null
+                        stopRecentering()
                         val px = (x * remoteWidth).roundToInt().coerceIn(0, remoteWidth - 1)
                         val py = (y * remoteHeight).roundToInt().coerceIn(0, remoteHeight - 1)
                         trackPointer(px, py)
                         if (centeredTrackpad) {
                             trackpadPosition = Offset(x, y)
-                            pan = trackpadPan(trackpadPosition, zoom, bandSizePx, screenSizePx)
+                            startRecentering()
                         }
                         session.sendPointer(px, py, 0)
                     }
