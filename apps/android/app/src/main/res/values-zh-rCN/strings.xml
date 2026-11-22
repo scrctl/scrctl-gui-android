@@ -354,4 +354,16 @@
     <string name="iphone_pin">在 iPhone 上输入此验证码：%1$s</string>
     <string name="library_nearby_screen_mirroring">屏幕镜像</string>
     <string name="iphone_prepare">准备开发者磁盘映像</string>
+    <string name="settings_session_toolbar">会话工具栏</string>
+    <string name="settings_customize_session_toolbar">自定义会话工具栏</string>
+    <string name="session_toolbar_preview">预览</string>
+    <string name="session_toolbar_reset">重置</string>
+    <string name="session_toolbar_observe">观察模式</string>
+    <string name="session_toolbar_pinned">工具栏上</string>
+    <string name="session_toolbar_unpinned">更多菜单中</string>
+    <string name="session_toolbar_scope">此顺序适用于所有连接。会话只显示支持的操作。</string>
+    <string name="session_toolbar_move_up">上移</string>
+    <string name="session_toolbar_move_down">下移</string>
+    <string name="session_toolbar_add">添加到工具栏</string>
+    <string name="session_toolbar_remove">移到更多菜单</string>
 </resources>

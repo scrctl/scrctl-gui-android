@@ -13,4 +13,5 @@ data class AppSettings(
     /** Browse for computers advertising VNC over Bonjour on the local network. */
     val discoverNearby: Boolean = true,
     val showSessionPreviews: Boolean = true,
+    val toolbarItems: List<SessionToolbarItem> = SessionToolbarItem.entries,
 )

@@ -14,6 +14,7 @@ import org.scrctl.android.gui.data.NearbyServer
 import org.scrctl.android.gui.data.QualityPreset
 import org.scrctl.android.gui.data.UpdateChannel
 import org.scrctl.android.gui.data.SettingsStore
+import org.scrctl.android.gui.data.SessionToolbarItem
 import org.scrctl.android.gui.data.SshKey
 import org.scrctl.android.gui.data.SshKeyStore
 import org.scrctl.android.gui.data.ThemeMode
@@ -72,6 +73,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteConnection(id: String): Boolean = connectionStore.deleteConnection(id)
+
+    fun setToolbarItems(items: List<SessionToolbarItem>) {
+        _settings.update { it.copy(toolbarItems = items.distinct()) }
+        settingsStore.save(_settings.value)
+    }
 
     fun setShowSessionPreviews(enabled: Boolean) {
         previews.setEnabled(enabled)

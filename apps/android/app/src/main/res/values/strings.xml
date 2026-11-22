@@ -356,4 +356,16 @@
     <string name="iphone_pin">Enter this code on the iPhone: %1$s</string>
     <string name="library_nearby_screen_mirroring">Screen Mirroring</string>
     <string name="iphone_prepare">Prepare Developer Disk Image</string>
+    <string name="settings_session_toolbar">Session Toolbar</string>
+    <string name="settings_customize_session_toolbar">Customize Session Toolbar</string>
+    <string name="session_toolbar_preview">Preview</string>
+    <string name="session_toolbar_reset">Reset</string>
+    <string name="session_toolbar_observe">Observe Mode</string>
+    <string name="session_toolbar_pinned">On Toolbar</string>
+    <string name="session_toolbar_unpinned">In More</string>
+    <string name="session_toolbar_scope">The order applies to all connections. Each session only shows supported actions.</string>
+    <string name="session_toolbar_move_up">Move Up</string>
+    <string name="session_toolbar_move_down">Move Down</string>
+    <string name="session_toolbar_add">Add to Toolbar</string>
+    <string name="session_toolbar_remove">Move to More</string>
 </resources>

@@ -108,7 +108,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.scrctl.android.gui.R
+import org.scrctl.android.gui.data.SettingsStore
 import org.scrctl.android.gui.data.Connection
 import org.scrctl.android.gui.data.DisconnectAction
 import org.scrctl.android.gui.data.QualityPreset
@@ -162,6 +164,9 @@ fun SessionScreen(
     onPointerModeChanged: (SessionPointerMode) -> Unit,
 ) {
     val context = LocalContext.current
+    val settings = remember(context.applicationContext) { SettingsStore(context.applicationContext) }
+    val toolbarUpdates = remember(settings) { settings.observeToolbarItems() }
+    val toolbarItems by toolbarUpdates.collectAsStateWithLifecycle(initialValue = settings.load().toolbarItems)
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -1047,6 +1052,7 @@ fun SessionScreen(
             )
         } else if (chromeVisible) {
             SessionToolbar(
+                toolbarItems = toolbarItems,
                 platform = if (isAppleRemote) RemotePlatform.MacOS else connection.platform,
                 onCommand = { command ->
                     if (!observing && status == SessionStatus.Connected) {

@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import org.scrctl.android.gui.BuildConfig
 import org.scrctl.android.gui.R
 import org.scrctl.android.gui.data.AppSettings
+import org.scrctl.android.gui.data.SessionToolbarItem
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.scrctl.android.gui.data.ThemeMode
 import org.scrctl.android.gui.data.UpdateChannel
 import org.scrctl.android.gui.ui.theme.ThemedSystemBarIcons
@@ -76,6 +78,7 @@ fun SettingsScreen(
     settings: AppSettings,
     sshKeyCount: Int,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onToolbarItemsChange: (List<SessionToolbarItem>) -> Unit,
     onDiscoverNearbyChange: (Boolean) -> Unit,
     onShowSessionPreviewsChange: (Boolean) -> Unit,
     updateChannel: UpdateChannel,
@@ -84,6 +87,11 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     ThemedSystemBarIcons()
+    var editingToolbar by rememberSaveable { mutableStateOf(false) }
+    if (editingToolbar) {
+        SessionToolbarSettings(settings.toolbarItems, onToolbarItemsChange) { editingToolbar = false }
+        return
+    }
 
     val versionLabel = BuildConfig.BUILD_VERSION.ifBlank { BuildConfig.VERSION_NAME }
 
@@ -178,6 +186,14 @@ fun SettingsScreen(
                             HorizontalDivider(Modifier.padding(start = 16.dp))
                         }
                     }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            SectionHeader(stringResource(R.string.settings_session_toolbar))
+            SettingsCard {
+                TextButton(onClick = { editingToolbar = true }) {
+                    Text(stringResource(R.string.settings_customize_session_toolbar))
                 }
             }
 

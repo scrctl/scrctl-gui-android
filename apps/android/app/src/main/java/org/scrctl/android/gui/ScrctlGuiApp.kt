@@ -105,6 +105,7 @@ fun ScrctlGuiApp(viewModel: MainViewModel = viewModel()) {
                     settings = settings,
                     sshKeyCount = sshKeys.size,
                     onThemeModeChange = viewModel::setThemeMode,
+                    onToolbarItemsChange = viewModel::setToolbarItems,
                     onDiscoverNearbyChange = viewModel::setDiscoverNearby,
                     onShowSessionPreviewsChange = viewModel::setShowSessionPreviews,
                     updateChannel = settings.updateChannel,
