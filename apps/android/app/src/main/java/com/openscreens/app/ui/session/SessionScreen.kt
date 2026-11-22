@@ -18,7 +18,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -33,7 +32,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -105,10 +103,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -926,9 +928,8 @@ fun SessionScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Gestures use screen coordinates: the band below is scaled by a
-                // graphicsLayer, and pointer deltas read inside that layer would
-                // feed the new zoom back into the next delta.
+                .clipToBounds()
+                // Keep gestures in the same coordinates as the full-screen canvas.
                 .pointerInput(session, remoteWidth, remoteHeight, trackpadMode, zoomEnabled, observing) {
                     if (observing) {
                         if (zoomEnabled && remoteWidth > 1 && remoteHeight > 1) {
@@ -942,7 +943,7 @@ fun SessionScreen(
                                     bandSizePx,
                                     screenSizePx,
                                 )
-                                zoom = newZoom
+                                zoom = if (newZoom <= ZOOM_ACTIVE_EPSILON) 1f else newZoom
                             }
                         }
                         return@pointerInput
@@ -1009,27 +1010,10 @@ fun SessionScreen(
 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        if (!isInsideContent(down.position)) {
-                            // Letterbox taps still toggle the session chrome; they
-                            // must not reach the remote pointer.
-                            var moved = false
-                            while (true) {
-                                val event = withTimeoutOrNull(50L) { awaitPointerEvent() }
-                                    ?: continue
-                                val pressed = event.changes.filter { it.pressed }
-                                if (pressed.isEmpty()) break
-                                if (pressed.size > 1 ||
-                                    (pressed.first().position - down.position)
-                                        .getDistance() > touchSlop
-                                ) {
-                                    moved = true
-                                }
-                            }
-                            if (!moved) chromeVisible = !chromeVisible
-                            return@awaitEachGesture
-                        }
+                        val startedOnImage = isInsideContent(down.position)
+                        var movedInLetterbox = false
                         val previousTap = taps.pending
-                        val isDoubleTap = previousTap != null &&
+                        val isDoubleTap = startedOnImage && previousTap != null &&
                             down.uptimeMillis - previousTap.time <= doubleTapTimeout &&
                             (down.position - previousTap.position).getDistance() <= doubleTapSlop
                         if (previousTap != null) {
@@ -1068,7 +1052,7 @@ fun SessionScreen(
                         // Long press holds a button down for dragging: one finger
                         // holds the left button, two the right, three the middle.
                         // Movement or a change in finger count cancels it.
-                        var holdTouches = 1
+                        var holdTouches = if (startedOnImage) 1 else 0
                         var holdStartedAt = down.uptimeMillis
                         var holdAnchor = down.position
                         var currentTouches = 1
@@ -1186,7 +1170,7 @@ fun SessionScreen(
                                 bandSizePx,
                                 screenSizePx,
                             )
-                            zoom = newZoom
+                            zoom = if (newZoom <= ZOOM_ACTIVE_EPSILON) 1f else newZoom
                             pan = newPan
                         }
 
@@ -1267,7 +1251,11 @@ fun SessionScreen(
 
                             if (pressed.size >= 2) {
                                 currentTouches = pressed.size
-                                val centroidNow = event.calculateCentroid(useCurrent = true)
+                                // Include the newly pressed finger when establishing the anchor.
+                                // calculateCentroid filters out pointers that were not down previously.
+                                val centroidNow = pressed.fold(Offset.Zero) { sum, pointer ->
+                                    sum + pointer.position
+                                } / pressed.size.toFloat()
                                 currentCentroid = centroidNow
                                 if (pressActive) {
                                     movePress(centroidNow)
@@ -1286,7 +1274,7 @@ fun SessionScreen(
                                         session.sendPointer(last.first, last.second, 0)
                                         trackPointer(last.first, last.second)
                                     }
-                                    multiTouchTapCandidate = mode == GestureMode.Pending
+                                    multiTouchTapCandidate = startedOnImage && mode == GestureMode.Pending
                                     mode = if (zoomEnabled && zoom > ZOOM_ACTIVE_EPSILON) {
                                         GestureMode.Transform
                                     } else {
@@ -1300,7 +1288,7 @@ fun SessionScreen(
                                     threeFinger = pressed.size >= 3
                                     threeFingerStart = centroidNow
                                     threeFingerSwipe = null
-                                    holdTouches = pressed.size.coerceAtMost(3)
+                                    holdTouches = if (startedOnImage) pressed.size.coerceAtMost(3) else 0
                                     holdStartedAt = SystemClock.uptimeMillis()
                                     holdAnchor = centroidNow
                                     multiTouchMoved = false
@@ -1353,7 +1341,7 @@ fun SessionScreen(
                                             holdTouches = 0
                                             mode = GestureMode.Transform
                                             applyPinch(centroidNow)
-                                        } else if ((centroidNow - multiTouchStartCentroid)
+                                        } else if (startedOnImage && (centroidNow - multiTouchStartCentroid)
                                                 .getDistance() > touchSlop * 2f
                                         ) {
                                             multiTouchTapCandidate = false
@@ -1445,6 +1433,11 @@ fun SessionScreen(
                             }
 
                             val change = pressed.first()
+                            if (!startedOnImage) {
+                                movedInLetterbox = movedInLetterbox ||
+                                    (change.position - down.position).getDistance() > touchSlop
+                                continue
+                            }
                             currentTouches = 1
                             currentCentroid = change.position
                             if (pressActive) {
@@ -1522,7 +1515,9 @@ fun SessionScreen(
                                 trackPointer(last.first, last.second)
                             }
                             GestureMode.Pending -> {
-                                if (isDoubleTap) {
+                                if (!startedOnImage) {
+                                    if (!movedInLetterbox) chromeVisible = !chromeVisible
+                                } else if (isDoubleTap) {
                                     val target = if (trackpadMode) {
                                         trackpadPointer?.let { it.x to it.y } ?: start
                                     } else {
@@ -1590,73 +1585,55 @@ fun SessionScreen(
                     }
                 },
         ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(canvasWidth)
-                    .aspectRatio(aspect)
-                    // The letterbox frame only exists at 1x; once zoomed the image
-                    // has to spill out and cover the local screen edge to edge.
-                    .then(
-                        if (zoomed) {
-                            Modifier
-                        } else {
-                            Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(FramebufferBackground)
-                                .border(
-                                    1.dp,
-                                    Color.White.copy(alpha = 0.08f),
-                                    RoundedCornerShape(16.dp),
-                                )
-                        },
-                    )
-                    .graphicsLayer {
-                        scaleX = zoom
-                        scaleY = zoom
-                        // Pan is stored in band units; the layer moves content
-                        // in parent pixels.
-                        translationX = pan.x * zoom
-                        translationY = pan.y * zoom
-                        transformOrigin = TransformOrigin.Center
-                    },
-            ) {
-                val live = frame
-                if (live != null) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val crop = frame?.viewport
-                        val sourceX = crop?.x ?: 0
-                        val sourceY = crop?.y ?: 0
-                        val sourceWidth = crop?.width ?: remoteWidth
-                        val sourceHeight = crop?.height ?: remoteHeight
-                        val destination = IntRect(
-                            left = (sourceX.toFloat() / remoteWidth * size.width).roundToInt(),
-                            top = (sourceY.toFloat() / remoteHeight * size.height).roundToInt(),
-                            right = ((sourceX + sourceWidth).toFloat() / remoteWidth * size.width)
-                                .roundToInt(),
-                            bottom = ((sourceY + sourceHeight).toFloat() / remoteHeight * size.height)
-                                .roundToInt(),
-                        )
+            val live = frame
+            if (live != null) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val desktop = Size(bandSizePx.width * zoom, bandSizePx.height * zoom)
+                    val origin = center + pan * zoom - Offset(desktop.width / 2, desktop.height / 2)
+                    val crop = live.viewport
+                    val scaleX = desktop.width / remoteWidth
+                    val scaleY = desktop.height / remoteHeight
+                    val left = (origin.x + crop.x * scaleX).roundToInt()
+                    val top = (origin.y + crop.y * scaleY).roundToInt()
+                    val right = (origin.x + (crop.x + crop.width) * scaleX).roundToInt()
+                    val bottom = (origin.y + (crop.y + crop.height) * scaleY).roundToInt()
+                    fun DrawScope.drawDesktop() {
                         drawImage(
                             image = live.bitmap.asImageBitmap(),
                             srcOffset = IntOffset.Zero,
                             srcSize = IntSize(live.bitmap.width, live.bitmap.height),
-                            dstOffset = IntOffset(destination.left, destination.top),
-                            dstSize = IntSize(
-                                (destination.right - destination.left).coerceAtLeast(1),
-                                (destination.bottom - destination.top).coerceAtLeast(1),
-                            ),
+                            dstOffset = IntOffset(left, top),
+                            dstSize = IntSize((right - left).coerceAtLeast(1), (bottom - top).coerceAtLeast(1)),
                             filterQuality = if (zoom > 1.2f) FilterQuality.Medium else FilterQuality.Low,
                         )
-                        drawRemoteCursor(cursor, cursorPosition, remoteWidth.toFloat(), size)
+                        drawRemoteCursor(cursor, cursorPosition, scaleX, origin)
                     }
-                } else {
-                    RemoteCanvasPlaceholder(
-                        remoteWidth = remoteWidth,
-                        remoteHeight = remoteHeight,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    if (zoomed) {
+                        drawDesktop()
+                    } else {
+                        val radius = CornerRadius(16.dp.toPx())
+                        val outline = Path().apply {
+                            addRoundRect(
+                                RoundRect(
+                                    left = origin.x, top = origin.y,
+                                    right = origin.x + desktop.width, bottom = origin.y + desktop.height,
+                                    cornerRadius = radius,
+                                ),
+                            )
+                        }
+                        clipPath(outline) {
+                            drawRect(FramebufferBackground, topLeft = origin, size = desktop)
+                            drawDesktop()
+                            drawPath(outline, Color.White.copy(alpha = 0.08f), style = Stroke(1.dp.toPx()))
+                        }
+                    }
                 }
+            } else {
+                RemoteCanvasPlaceholder(
+                    remoteWidth = remoteWidth,
+                    remoteHeight = remoteHeight,
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
         }
 
@@ -2031,19 +2008,17 @@ private fun visibleServerRect(
 }
 
 /**
- * Draws the client-side cursor bitmap in framebuffer coordinates, so the canvas
- * transpose (zoom and pan via graphicsLayer) applies to it automatically.
+ * Draws the cursor in the same screen coordinates as the desktop.
  */
 private fun DrawScope.drawRemoteCursor(
     cursor: SessionEvent.Cursor?,
     position: IntOffset?,
-    remoteWidth: Float,
-    canvasSize: Size,
+    scale: Float,
+    origin: Offset,
 ) {
-    if (cursor == null || position == null || remoteWidth <= 0f) return
-    val scale = canvasSize.width / remoteWidth
-    val left = (position.x - cursor.hotspotX) * scale
-    val top = (position.y - cursor.hotspotY) * scale
+    if (cursor == null || position == null || scale <= 0f) return
+    val left = origin.x + (position.x - cursor.hotspotX) * scale
+    val top = origin.y + (position.y - cursor.hotspotY) * scale
     val width = (cursor.bitmap.width * scale).roundToInt().coerceAtLeast(1)
     val height = (cursor.bitmap.height * scale).roundToInt().coerceAtLeast(1)
     drawImage(
@@ -2550,7 +2525,8 @@ private fun Modifier.touchBarrier(): Modifier = pointerInput(Unit) {
  * screen on that axis; content smaller than the screen stays centred.
  */
 private fun clampPan(value: Offset, zoom: Float, band: IntSize, screen: IntSize): Offset {
-    val safeZoom = zoom.coerceAtLeast(0.01f)
+    if (zoom <= ZOOM_ACTIVE_EPSILON) return Offset.Zero
+    val safeZoom = zoom
     // When the band covers the screen, keep its edges outside; when it is
     // smaller, let it move inside so a pinch stays anchored between the fingers
     // instead of snapping back to the centre.
