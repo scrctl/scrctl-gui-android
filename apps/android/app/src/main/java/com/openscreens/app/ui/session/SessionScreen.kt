@@ -251,6 +251,7 @@ fun SessionScreen(
     var keyboardActive by remember { mutableStateOf(false) }
     var modifiers by remember { mutableIntStateOf(0) }
     var backgroundedAt by remember { mutableLongStateOf(0L) }
+    var cursorShape by remember(session) { mutableStateOf<SessionEvent.Cursor?>(null) }
     var cursorPosition by remember { mutableStateOf<IntOffset?>(null) }
     var pointerMode by rememberSaveable(connection.id) { mutableStateOf(initialPointerMode) }
     val trackpadMode = pointerMode == SessionPointerMode.Trackpad
@@ -483,6 +484,7 @@ fun SessionScreen(
                     val unfinished = resetTransferProgress()
                     scope.launch { discardDownload(unfinished) }
                     cursorPosition = null
+                    cursorShape = null
                     desktopScreens = emptyList()
                     selectedDisplayId = null
                     pendingDisplayRestore = currentConnection.preferredDisplayId
@@ -540,6 +542,7 @@ fun SessionScreen(
                         }
                     }
                 }
+                is SessionEvent.Cursor -> cursorShape = event
                 is SessionEvent.Frame -> {
                     status = SessionStatus.Connected
                     frame = event
@@ -1722,7 +1725,27 @@ fun SessionScreen(
                         } else {
                             Offset(origin.x + x * scaleX, origin.y + y * scaleY)
                         }
-                        clipRect { drawLocalCursor(pointer) }
+                        clipRect {
+                            val shape = cursorShape
+                            val bitmap = shape?.bitmap
+                            if (shape == null) {
+                                drawLocalCursor(pointer)
+                            } else if (bitmap != null) {
+                                val scale = 24.dp.toPx() / maxOf(bitmap.width, bitmap.height)
+                                drawImage(
+                                    image = bitmap.asImageBitmap(),
+                                    dstOffset = IntOffset(
+                                        (pointer.x - shape.hotspotX * scale).roundToInt(),
+                                        (pointer.y - shape.hotspotY * scale).roundToInt(),
+                                    ),
+                                    dstSize = IntSize(
+                                        (bitmap.width * scale).roundToInt().coerceAtLeast(1),
+                                        (bitmap.height * scale).roundToInt().coerceAtLeast(1),
+                                    ),
+                                    filterQuality = FilterQuality.None,
+                                )
+                            }
+                        }
                     }
                 }
             } else {

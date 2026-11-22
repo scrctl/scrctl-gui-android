@@ -144,6 +144,9 @@ sealed interface SessionEvent {
      */
     data class Frame(val sequence: Long, val bitmap: Bitmap, val viewport: Viewport) : SessionEvent
 
+    /** A null bitmap means the remote server hid its cursor. */
+    data class Cursor(val bitmap: Bitmap?, val hotspotX: Int, val hotspotY: Int) : SessionEvent
+
     /** The region stored in the bitmap, in server pixels. */
     data class Viewport(
         val x: Int,

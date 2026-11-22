@@ -192,7 +192,7 @@ internal class UniFfiRemoteSession(
             username = connection.username.ifBlank { null },
             password = connection.vncPassword.ifEmpty { null },
             shared = true,
-            localCursor = false,
+            localCursor = true,
             quality = quality.jpegLevel,
             frameIntervalMs = 16u,
             wireguardConfig = connection.wireGuardConfig,
@@ -689,7 +689,19 @@ internal class UniFfiRemoteSession(
                     }
                     is NativeEvent.Clipboard -> _events.emit(SessionEvent.RemoteClipboard(event.text))
                     NativeEvent.Bell -> Log.d(TAG, "remote bell")
-                    is NativeEvent.Cursor, is NativeEvent.PointerPosition -> Unit
+                    is NativeEvent.Cursor -> {
+                        val width = event.width.toInt()
+                        val height = event.height.toInt()
+                        if (width == 0 || height == 0) {
+                            _events.emit(SessionEvent.Cursor(null, 0, 0))
+                        } else if (width.toLong() * height == event.pixels.size.toLong() / 4) {
+                            val argb = IntArray(width * height)
+                            bgraBytesToArgb(event.pixels, argb.size, argb)
+                            val bitmap = Bitmap.createBitmap(argb, width, height, Bitmap.Config.ARGB_8888)
+                            _events.emit(SessionEvent.Cursor(bitmap, event.hotspotX.toInt(), event.hotspotY.toInt()))
+                        }
+                    }
+                    is NativeEvent.PointerPosition -> Unit
                     is NativeEvent.UploadRequest ->
                         _events.emit(
                             SessionEvent.UploadRequest(event.handle.toInt(), event.path),
