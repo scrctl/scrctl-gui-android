@@ -239,7 +239,6 @@ fun SessionScreen(
     var backgroundedAt by remember { mutableLongStateOf(0L) }
     var cursor by remember { mutableStateOf<SessionEvent.Cursor?>(null) }
     var cursorPosition by remember { mutableStateOf<IntOffset?>(null) }
-    var viewport by remember { mutableStateOf<SessionEvent.Viewport?>(null) }
     var trackpadMode by rememberSaveable { mutableStateOf(false) }
     var desktopScreens by remember { mutableStateOf<List<DisplayScreen>>(emptyList()) }
     var needsMacSessionChoice by remember(session) { mutableStateOf(false) }
@@ -334,7 +333,7 @@ fun SessionScreen(
         val next = !trackpadMode
         trackpadMode = next
         if (next) {
-            val region = viewport
+            val region = frame?.viewport
             val pointer = trackpadPointer ?: if (region != null) {
                 IntOffset(region.x + region.width / 2, region.y + region.height / 2)
             } else {
@@ -495,7 +494,6 @@ fun SessionScreen(
                     // A new session starts on a fresh transport: the old bitmap is
                     // cropped to a viewport the new session knows nothing about.
                     frame = null
-                    viewport = null
                 }
                 is SessionEvent.Connected -> {
                     supportsCurtainMode = event.supportsCurtainMode
@@ -505,7 +503,6 @@ fun SessionScreen(
                     // The core publishes a whole-framebuffer viewport on connect and
                     // emits the new crop with its first complete frame.
                     frame = null
-                    viewport = null
                     login.accepted()?.let { accepted ->
                         if (!onRemember(accepted)) {
                             scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.session_remember_failed)) }
@@ -519,18 +516,16 @@ fun SessionScreen(
                     // Frame and viewport stay paired: keep the previous crop so the
                     // stale bitmap is drawn at its real geometry instead of being
                     // stretched over the whole framebuffer.
-                    if (!viewportFits(viewport, event.width, event.height)) {
+                    if (!viewportFits(frame?.viewport, event.width, event.height)) {
                         frame = null
-                        viewport = null
                     }
                 }
                 is SessionEvent.DesktopLayout -> {
                     remoteWidth = event.width
                     remoteHeight = event.height
                     desktopScreens = event.screens
-                    if (!viewportFits(viewport, event.width, event.height)) {
+                    if (!viewportFits(frame?.viewport, event.width, event.height)) {
                         frame = null
-                        viewport = null
                     }
                     displaySwitch.withLock {
                         if (status == SessionStatus.Connected) {
@@ -546,7 +541,6 @@ fun SessionScreen(
                         }
                     }
                 }
-                is SessionEvent.Viewport -> viewport = event
                 is SessionEvent.Frame -> {
                     status = SessionStatus.Connected
                     frame = event
@@ -861,7 +855,7 @@ fun SessionScreen(
         }
         val canvasWidth = min(maxWidth.value, maxHeight.value * aspect).dp
 
-        // Subscribe only to the region the viewport shows, and ask for a
+        // Keep a local crop around the visible region, and ask for a
         // sampling density that matches the current zoom. Debounced so a pinch
         // or pan settles before the region is re-requested.
         val density = LocalDensity.current
@@ -1497,7 +1491,7 @@ fun SessionScreen(
                             } else if (mode == GestureMode.Move) {
                                 val delta = change.position - lastTouch
                                 lastTouch = change.position
-                                val region = viewport
+                                val region = frame?.viewport
                                 val base = trackpadPointer
                                     ?: IntOffset(remoteWidth / 2, remoteHeight / 2)
                                 // The cursor follows the finger 1:1 on screen, so a
@@ -1630,7 +1624,7 @@ fun SessionScreen(
                 val live = frame
                 if (live != null) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val crop = viewport
+                        val crop = frame?.viewport
                         val sourceX = crop?.x ?: 0
                         val sourceY = crop?.y ?: 0
                         val sourceWidth = crop?.width ?: remoteWidth

@@ -135,20 +135,19 @@ sealed interface SessionEvent {
      * recomposes even though [bitmap] is reused between frames; treat the pixels as
      * read-only, the session may be drawing the next frame into a different buffer.
      */
-    data class Frame(val sequence: Long, val bitmap: Bitmap) : SessionEvent
+    data class Frame(val sequence: Long, val bitmap: Bitmap, val viewport: Viewport) : SessionEvent
 
     /** A client-side cursor bitmap supplied through the Cursor pseudo-encoding. */
     data class Cursor(val bitmap: Bitmap, val hotspotX: Int, val hotspotY: Int) : SessionEvent
 
-    /** The framebuffer region currently stored in [Frame] bitmaps, in server
-     * pixels. Frames outside this region are not delivered. */
+    /** The region stored in the bitmap, in server pixels. */
     data class Viewport(
         val x: Int,
         val y: Int,
         val width: Int,
         val height: Int,
         val scale: Int,
-    ) : SessionEvent
+    )
 
     /** The server asks the client to upload into [path] (Apple drag-in). */
     data class UploadRequest(val handle: Int, val path: String) : SessionEvent

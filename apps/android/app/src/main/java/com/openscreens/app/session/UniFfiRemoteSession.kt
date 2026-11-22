@@ -127,14 +127,6 @@ internal class UniFfiRemoteSession(
     // published together with the first frame that fills it.
     private var viewportEmitted = true
 
-    // Coverage of the pending viewport, in COVERAGE_CELL-sized cells. Apple's
-    // Adaptive DCT splits one update into many rectangles, so "first frame that
-    // fills the viewport" has to be judged by the union of painted rectangles.
-    private var coverage = ByteArray(0)
-    private var coverageCols = 0
-    private var coverageRows = 0
-    private var coverageRemaining = 0
-
     private val previewDisplayGeneration = AtomicInteger()
     @Volatile private var previewSwitchingDisplay = false
     @Volatile private var previewSelectedDisplay: Int? = null
@@ -621,7 +613,7 @@ internal class UniFfiRemoteSession(
         val alignedWidth = alignedRight - alignedLeft
         val alignedHeight = alignedBottom - alignedTop
 
-        val request = frameMutex.withLock {
+        frameMutex.withLock {
             val unchanged = alignedLeft == viewportX && alignedTop == viewportY &&
                 alignedWidth == viewportWidth && alignedHeight == viewportHeight &&
                 scale == displayScale && front != null
@@ -650,17 +642,11 @@ internal class UniFfiRemoteSession(
                         "sampling 1/$scale",
                 )
             }
-            intArrayOf(alignedLeft, alignedTop, alignedWidth, alignedHeight)
         }
 
-        runCatching {
-            current.setViewport(
-                x = request[0].toUShort(),
-                y = request[1].toUShort(),
-                width = request[2].toUShort(),
-                height = request[3].toUShort(),
-            )
-        }.onFailure { Log.w(TAG, "setViewport failed", it) }
+        // Refresh the local crop while keeping incremental requests full-desktop.
+        runCatching { current.setViewport(0u, 0u, 0u, 0u) }
+            .onFailure { Log.w(TAG, "setViewport failed", it) }
     }
 
     private suspend fun poll(connected: NativeSession) {
@@ -853,36 +839,8 @@ internal class UniFfiRemoteSession(
         this.viewportWidth = width
         this.viewportHeight = height
         this.displayScale = scale
-        resetCoverage()
         resetPreviewCoverage()
         return true
-    }
-
-    private fun resetCoverage() {
-        coverageCols = ceilDiv(viewportWidth, COVERAGE_CELL)
-        coverageRows = ceilDiv(viewportHeight, COVERAGE_CELL)
-        coverage = ByteArray(coverageCols * coverageRows)
-        coverageRemaining = coverageCols * coverageRows
-    }
-
-    private fun markCovered(left: Int, top: Int, right: Int, bottom: Int) {
-        if (coverageRemaining <= 0) return
-        val clippedRight = minOf(right, viewportX + viewportWidth)
-        val clippedBottom = minOf(bottom, viewportY + viewportHeight)
-        if (clippedRight <= left || clippedBottom <= top) return
-        val firstCol = ((left - viewportX) / COVERAGE_CELL).coerceIn(0, coverageCols - 1)
-        val lastCol = ((clippedRight - 1 - viewportX) / COVERAGE_CELL).coerceIn(0, coverageCols - 1)
-        val firstRow = ((top - viewportY) / COVERAGE_CELL).coerceIn(0, coverageRows - 1)
-        val lastRow = ((clippedBottom - 1 - viewportY) / COVERAGE_CELL).coerceIn(0, coverageRows - 1)
-        for (row in firstRow..lastRow) {
-            for (col in firstCol..lastCol) {
-                val index = row * coverageCols + col
-                if (coverage[index].toInt() == 0) {
-                    coverage[index] = 1
-                    coverageRemaining--
-                }
-            }
-        }
     }
 
     private suspend fun renderFrame(connected: NativeSession, event: NativeEvent.Frame) {
@@ -953,20 +911,26 @@ internal class UniFfiRemoteSession(
         // otherwise incremental updates would be painted on a stale (often black)
         // bitmap. An update that covers the whole viewport, or the first paint of
         // a new viewport, skips the copy.
-        val coversViewport = event.rects.any { rect ->
+        if (event.rects.isEmpty()) return
+        val needsBaseline = !viewportEmitted
+        val rectangles = if (needsBaseline) {
+            listOf(rect(viewportX, viewportY, viewportWidth, viewportHeight))
+        } else {
+            event.rects
+        }
+        val coversViewport = rectangles.any { rect ->
             rect.x.toInt() <= viewportX && rect.y.toInt() <= viewportY &&
                 rect.x.toInt() + rect.width.toInt() >= viewportX + viewportWidth &&
                 rect.y.toInt() + rect.height.toInt() >= viewportY + viewportHeight
         }
-        // A freshly installed viewport starts black; keep showing the previous
-        // complete frame until the server has painted the whole new region,
-        // otherwise the UI briefly maps a partially filled crop.
+        // Keep the current frame visible while copying a new crop from the
+        // engine framebuffer. An existing crop can use sparse damage.
         if (!coversViewport && viewportEmitted) {
             front?.let { copyInto(target, it) }
         }
 
         var wrote = false
-        for (rect in event.rects) {
+        for (rect in rectangles) {
             val left = maxOf(rect.x.toInt(), viewportX)
             val top = maxOf(rect.y.toInt(), viewportY)
             val right = minOf(rect.x.toInt() + rect.width.toInt(), viewportX + viewportWidth)
@@ -983,12 +947,12 @@ internal class UniFfiRemoteSession(
             val rowsPerBand = maxOf(1, MAX_SCRATCH_PIXELS / destWidth)
             val bandSourceHeight = rowsPerBand * scale
             var bandTop = top
-            var painted = false
             while (bandTop < bottom) {
                 val bandBottom = minOf(bottom, bandTop + bandSourceHeight)
                 val destTop = bandTop / scale - viewportY / scale
                 val destHeight = (bandBottom - 1) / scale - bandTop / scale + 1
                 val count = destWidth * destHeight
+                var paintedBand = false
                 if (destTop >= 0 && destLeft >= 0 &&
                     destTop + destHeight <= target.height &&
                     destLeft + destWidth <= target.width &&
@@ -1013,42 +977,28 @@ internal class UniFfiRemoteSession(
                         if (!previewSwitchingDisplay && previewFrameGeneration == previewDisplayGeneration.get()) {
                             previewCoverage?.record(left, bandTop, right - left, bandBottom - bandTop)
                         }
-                        painted = true
+                        paintedBand = true
                         wrote = true
                     }
                 }
+                if (needsBaseline && !paintedBand) return
                 bandTop = bandBottom
-            }
-            if (painted && !viewportEmitted) {
-                markCovered(left, top, right, bottom)
             }
         }
         if (!wrote) return
         finishPreviewFrame(target)
 
-        if (!viewportEmitted) {
-            if (coverageRemaining > 0) return
-            viewportEmitted = true
-            val previous = front
-            front = target
-            back = previous ?: target
-            _events.emit(
-                SessionEvent.Viewport(
-                    x = viewportX,
-                    y = viewportY,
-                    width = viewportWidth,
-                    height = viewportHeight,
-                    scale = scale,
-                ),
-            )
-            _events.emit(SessionEvent.Frame(event.sequence.toLong(), target))
-            return
-        }
-
+        viewportEmitted = true
         val previous = front
         front = target
         back = previous ?: target
-        _events.emit(SessionEvent.Frame(event.sequence.toLong(), target))
+        _events.emit(
+            SessionEvent.Frame(
+                event.sequence.toLong(),
+                target,
+                SessionEvent.Viewport(viewportX, viewportY, viewportWidth, viewportHeight, scale),
+            ),
+        )
     }
 
     private fun finishPreviewFrame(bitmap: Bitmap) {
@@ -1154,9 +1104,7 @@ internal class UniFfiRemoteSession(
         const val MAX_VIEWPORT_PIXELS = 6_000_000L
         const val MAX_DISPLAY_SCALE = 16
         const val MAX_SCRATCH_PIXELS = 1_000_000
-        // Cell size (source pixels) for the first-paint coverage grid.
         const val PREVIEW_INTERVAL_MS = 10_000L
-        const val COVERAGE_CELL = 64
     }
 }
 
