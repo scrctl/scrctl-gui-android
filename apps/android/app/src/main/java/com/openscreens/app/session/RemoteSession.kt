@@ -53,7 +53,7 @@ interface RemoteSession {
 
     suspend fun copyRegion(x: Int, y: Int, width: Int, height: Int): ByteArray
 
-    fun setQuality(quality: QualityPreset)
+    suspend fun setQuality(quality: QualityPreset)
 
     /**
      * Restricts server updates to the visible framebuffer region (server
@@ -121,7 +121,14 @@ enum class CredentialChallenge { MissingUsername, MissingPassword, Rejected }
 sealed interface SessionEvent {
     data object MacSessionChoiceRequired : SessionEvent
     data object Connecting : SessionEvent
-    data class Connected(val width: Int, val height: Int, val supportsCurtainMode: Boolean) : SessionEvent
+    data class Connected(
+        val width: Int,
+        val height: Int,
+        val supportsCurtainMode: Boolean,
+        val appleRemote: Boolean,
+        val fileUpload: Boolean,
+        val fileDownload: Boolean,
+    ) : SessionEvent
     data class Resized(val width: Int, val height: Int) : SessionEvent
 
     data class DesktopLayout(

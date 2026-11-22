@@ -261,6 +261,10 @@ fun SessionScreen(
     var desktopScreens by remember { mutableStateOf<List<DisplayScreen>>(emptyList()) }
     var needsMacSessionChoice by remember(session) { mutableStateOf(false) }
     var supportsCurtainMode by remember(session) { mutableStateOf(false) }
+    var isAppleRemote by remember(session) { mutableStateOf(false) }
+    var supportsFileUpload by remember(session) { mutableStateOf(false) }
+    var supportsFileDownload by remember(session) { mutableStateOf(false) }
+    var changingQuality by remember(session) { mutableStateOf(false) }
     var selectedDisplayId by remember(session) { mutableStateOf<Int?>(null) }
     var pendingDisplayRestore by remember(session) {
         mutableStateOf(connection.preferredDisplayId.takeIf { connection.rememberSelectedDisplay })
@@ -293,7 +297,7 @@ fun SessionScreen(
     val sendFilePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
-        if (observing || uris.isEmpty() || pendingUpload != null || status != SessionStatus.Connected) {
+        if (observing || !supportsFileUpload || uris.isEmpty() || pendingUpload != null || status != SessionStatus.Connected) {
             return@rememberLauncherForActivityResult
         }
         val handle = session.nextTransferHandle()
@@ -467,6 +471,9 @@ fun SessionScreen(
                     disconnectRequest = null
                     needsMacSessionChoice = false
                     supportsCurtainMode = false
+                    isAppleRemote = false
+                    supportsFileUpload = false
+                    supportsFileDownload = false
                     clipboard.reset()
                     clipboardFetchRequested = false
                     clipboardSendRequested = false
@@ -486,6 +493,9 @@ fun SessionScreen(
                 }
                 is SessionEvent.Connected -> {
                     supportsCurtainMode = event.supportsCurtainMode
+                    isAppleRemote = event.appleRemote
+                    supportsFileUpload = event.fileUpload
+                    supportsFileDownload = event.fileDownload
                     status = SessionStatus.Connected
                     remoteWidth = event.width
                     remoteHeight = event.height
@@ -846,10 +856,20 @@ fun SessionScreen(
     }
 
     val selectQuality: (QualityPreset) -> Unit = { preset ->
-        if (preset != quality) {
-            onQualityChange(preset)
-            session.setQuality(preset)
-            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.session_quality_next_connection)) }
+        if (preset != quality && status == SessionStatus.Connected && !changingQuality) {
+            changingQuality = true
+            scope.launch {
+                try {
+                    session.setQuality(preset)
+                    onQualityChange(preset)
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    changingQuality = false
+                    snackbarHostState.showSnackbar(context.getString(R.string.session_quality_failed))
+                } finally {
+                    changingQuality = false
+                }
+            }
         }
     }
 
@@ -1751,7 +1771,7 @@ fun SessionScreen(
             )
         } else if (chromeVisible) {
             SessionToolbar(
-                platform = connection.platform,
+                platform = if (isAppleRemote) RemotePlatform.MacOS else connection.platform,
                 onCommand = { command ->
                     if (!observing && status == SessionStatus.Connected) {
                         sendChord(command.keysym, command.modifiers, session::sendKey)
@@ -1760,6 +1780,7 @@ fun SessionScreen(
                 observing = observing,
                 onObserveModeChange = toggleObserveMode,
                 quality = quality,
+                changingQuality = changingQuality,
                 onQualitySelected = selectQuality,
                 isFullscreen = isFullscreen,
                 pointerMode = pointerMode,
@@ -1805,7 +1826,7 @@ fun SessionScreen(
                 onComposeClipboardText = { showClipboardDialog = true },
                 scaling = scaling,
                 onScalingSelected = { scaling = it },
-                macTarget = connection.platform == RemotePlatform.MacOS || connection.requestMacSharing || supportsCurtainMode,
+                macTarget = isAppleRemote || connection.platform == RemotePlatform.MacOS,
                 onHotCorner = { x, y ->
                     if (!observing && status == SessionStatus.Connected && remoteWidth > 0 && remoteHeight > 0) {
                         recenterJob?.cancel()
@@ -1820,6 +1841,8 @@ fun SessionScreen(
                         session.sendPointer(px, py, 0)
                     }
                 },
+                supportsFileUpload = supportsFileUpload,
+                supportsFileDownload = supportsFileDownload,
                 onUpload = { sendFilePicker.launch(arrayOf("*/*")) },
                 onDownload = { showDownloadDialog = true },
                 canUpload = status == SessionStatus.Connected && pendingUpload == null,
@@ -1910,7 +1933,7 @@ fun SessionScreen(
             onDismiss = { showDownloadDialog = false },
             onDownload = { path ->
                 showDownloadDialog = false
-                if (pendingDownload == null && status == SessionStatus.Connected) {
+                if (supportsFileDownload && pendingDownload == null && status == SessionStatus.Connected) {
                     val folder = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                         ?: File(context.filesDir, "downloads")
                     val root = File(folder, "transfers/${UUID.randomUUID()}")

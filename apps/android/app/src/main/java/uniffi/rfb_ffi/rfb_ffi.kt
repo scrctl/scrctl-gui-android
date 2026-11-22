@@ -714,6 +714,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_disconnect(
     ): Int
+    external fun uniffi_rfb_ffi_checksum_method_remotesession_is_apple_remote(
+    ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_next_event(
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_next_transfer_handle(
@@ -740,6 +742,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_set_clipboard_sharing(
     ): Int
+    external fun uniffi_rfb_ffi_checksum_method_remotesession_set_quality(
+    ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_set_viewport(
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_size(
@@ -749,6 +753,10 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_rfb_ffi_checksum_method_remotesession_start_drag_out(
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_supports_curtain_mode(
+    ): Int
+    external fun uniffi_rfb_ffi_checksum_method_remotesession_supports_file_download(
+    ): Int
+    external fun uniffi_rfb_ffi_checksum_method_remotesession_supports_file_upload(
     ): Int
     external fun uniffi_rfb_ffi_checksum_method_remotesession_upload_complete(
     ): Int
@@ -820,6 +828,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_rfb_ffi_fn_method_remotesession_disconnect(`ptr`: Long,
     ): Long
+    external fun uniffi_rfb_ffi_fn_method_remotesession_is_apple_remote(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
     external fun uniffi_rfb_ffi_fn_method_remotesession_next_event(`ptr`: Long,
     ): Long
     external fun uniffi_rfb_ffi_fn_method_remotesession_next_transfer_handle(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -846,6 +856,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_rfb_ffi_fn_method_remotesession_set_clipboard_sharing(`ptr`: Long,`enabled`: Byte,
     ): Long
+    external fun uniffi_rfb_ffi_fn_method_remotesession_set_quality(`ptr`: Long,`level`: Byte,
+    ): Long
     external fun uniffi_rfb_ffi_fn_method_remotesession_set_viewport(`ptr`: Long,`x`: Short,`y`: Short,`width`: Short,`height`: Short,
     ): Long
     external fun uniffi_rfb_ffi_fn_method_remotesession_size(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -855,6 +867,10 @@ internal object UniffiLib {
     external fun uniffi_rfb_ffi_fn_method_remotesession_start_drag_out(`ptr`: Long,`handle`: Int,
     ): Long
     external fun uniffi_rfb_ffi_fn_method_remotesession_supports_curtain_mode(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_rfb_ffi_fn_method_remotesession_supports_file_download(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
+    external fun uniffi_rfb_ffi_fn_method_remotesession_supports_file_upload(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
     external fun uniffi_rfb_ffi_fn_method_remotesession_upload_complete(`ptr`: Long,`handle`: Int,
     ): Long
@@ -1049,6 +1065,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_disconnect() and 0xFFFF) != 3357) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_is_apple_remote() and 0xFFFF) != 7936) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_next_event() and 0xFFFF) != 40415) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1088,6 +1107,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_set_clipboard_sharing() and 0xFFFF) != 23849) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_set_quality() and 0xFFFF) != 15466) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_set_viewport() and 0xFFFF) != 37258) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1101,6 +1123,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_supports_curtain_mode() and 0xFFFF) != 26734) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_supports_file_download() and 0xFFFF) != 2911) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_supports_file_upload() and 0xFFFF) != 49819) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_rfb_ffi_checksum_method_remotesession_upload_complete() and 0xFFFF) != 6976) {
@@ -1991,6 +2019,11 @@ public interface RemoteSessionInterface {
     
     suspend fun `disconnect`()
     
+    /**
+     * Reports whether the session negotiated Apple's RFB 3.889 variant.
+     */
+    fun `isAppleRemote`(): kotlin.Boolean
+
     suspend fun `nextEvent`(): SessionEvent?
     
     fun `nextTransferHandle`(): kotlin.UInt
@@ -2025,6 +2058,12 @@ public interface RemoteSessionInterface {
     suspend fun `setClipboardSharing`(`enabled`: kotlin.Boolean)
     
     /**
+     * Sets a fixed Tight JPEG quality (0 through 9) and refreshes the
+     * current viewport. The server may ignore the quality hint.
+     */
+    suspend fun `setQuality`(`level`: kotlin.UByte)
+
+    /**
      * Restricts incremental update requests to a region and refreshes it.
      * A zero width or height restores full-screen updates.
      */
@@ -2042,6 +2081,16 @@ public interface RemoteSessionInterface {
     
     fun `supportsCurtainMode`(): kotlin.Boolean
     
+    /**
+     * Reports whether the Apple server advertised drag-out support.
+     */
+    fun `supportsFileDownload`(): kotlin.Boolean
+
+    /**
+     * Reports whether the Apple server advertised drag-in support.
+     */
+    fun `supportsFileUpload`(): kotlin.Boolean
+
     suspend fun `uploadComplete`(`handle`: kotlin.UInt)
     
     suspend fun `uploadData`(`handle`: kotlin.UInt, `chunk`: kotlin.ByteArray)
@@ -2290,6 +2339,22 @@ open class RemoteSession: Disposable, AutoCloseable, RemoteSessionInterface
     }
 
     
+    /**
+     * Reports whether the session negotiated Apple's RFB 3.889 variant.
+     */override fun `isAppleRemote`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_rfb_ffi_fn_method_remotesession_is_apple_remote(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `nextEvent`() : SessionEvent? {
         return uniffiRustCallAsync(
@@ -2579,6 +2644,33 @@ open class RemoteSession: Disposable, AutoCloseable, RemoteSessionInterface
 
     
     /**
+     * Sets a fixed Tight JPEG quality (0 through 9) and refreshes the
+     * current viewport. The server may ignore the quality hint.
+     */
+    @Throws(SessionFailure::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `setQuality`(`level`: kotlin.UByte) {
+        return uniffiRustCallAsync(
+        callWithHandle { uniffiHandle ->
+            UniffiLib.uniffi_rfb_ffi_fn_method_remotesession_set_quality(
+                uniffiHandle,
+
+        FfiConverterUByte.lower(`level`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.ffi_rfb_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.ffi_rfb_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.ffi_rfb_ffi_rust_future_free_void(future) },
+        // lift function
+        { },
+
+        // Error FFI converter
+        SessionFailure.ErrorHandler,
+    )
+    }
+
+
+    /**
      * Restricts incremental update requests to a region and refreshes it.
      * A zero width or height restores full-screen updates.
      */
@@ -2686,6 +2778,38 @@ open class RemoteSession: Disposable, AutoCloseable, RemoteSessionInterface
     
 
     
+    /**
+     * Reports whether the Apple server advertised drag-out support.
+     */override fun `supportsFileDownload`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_rfb_ffi_fn_method_remotesession_supports_file_download(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
+    /**
+     * Reports whether the Apple server advertised drag-in support.
+     */override fun `supportsFileUpload`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_rfb_ffi_fn_method_remotesession_supports_file_upload(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(SessionFailure::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `uploadComplete`(`handle`: kotlin.UInt) {

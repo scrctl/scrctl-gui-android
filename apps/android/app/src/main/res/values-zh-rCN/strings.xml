@@ -342,5 +342,6 @@
     <string name="session_observe_off">查看模式已关闭</string>
     <string name="session_scale_fit">适应大小</string>
     <string name="session_scale_fill">填满</string>
-    <string name="session_quality_next_connection">画质将在下次连接时生效。</string>
+    <string name="session_quality_failed">无法切换画质。</string>
+    <string name="session_scaling">缩放</string>
 </resources>

@@ -221,7 +221,7 @@
     <string name="session_clipboard_send_failed">Could not send clipboard text.</string>
     <string name="session_clipboard_hint">Text to send to the remote clipboard</string>
     <string name="session_clipboard_action">Send text</string>
-    <string name="session_quality">Quality</string>
+    <string name="session_quality">Picture Quality</string>
     <string name="session_send_file">Send Files…</string>
     <string name="session_upload_preparing">Preparing transfer…</string>
     <string name="session_upload_done">Sent %1$d file(s)</string>
@@ -344,5 +344,6 @@
     <string name="session_observe_off">Observe Mode Off</string>
     <string name="session_scale_fit">Scale to Fit</string>
     <string name="session_scale_fill">Scale to Fill</string>
-    <string name="session_quality_next_connection">Picture quality will apply next time you connect.</string>
+    <string name="session_quality_failed">Could not change picture quality.</string>
+    <string name="session_scaling">Scaling</string>
 </resources>

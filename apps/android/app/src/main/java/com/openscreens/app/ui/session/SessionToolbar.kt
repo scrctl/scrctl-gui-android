@@ -74,6 +74,7 @@ private data class SessionAction(
     val enabled: Boolean = true,
     val checked: Boolean? = null,
     val submenu: List<SessionAction> = emptyList(),
+    val sectionHeader: Boolean = false,
     val onClick: () -> Unit = {},
 )
 
@@ -93,6 +94,7 @@ internal fun SessionToolbar(
     selectedDisplayId: Int?,
     onSelectDisplay: (Int?) -> Unit,
     quality: QualityPreset,
+    changingQuality: Boolean,
     onQualitySelected: (QualityPreset) -> Unit,
     isFullscreen: Boolean,
     onKeyboard: () -> Unit,
@@ -106,6 +108,8 @@ internal fun SessionToolbar(
     onScalingSelected: (SessionScaling) -> Unit,
     macTarget: Boolean,
     onHotCorner: (Float, Float) -> Unit,
+    supportsFileUpload: Boolean,
+    supportsFileDownload: Boolean,
     onUpload: () -> Unit,
     onDownload: () -> Unit,
     canUpload: Boolean,
@@ -187,15 +191,21 @@ internal fun SessionToolbar(
                 }
             },
         ))
-        add(SessionAction(
-            stringResource(R.string.session_file_transfers),
-            Icons.Outlined.SwapVert,
-            submenu = listOf(
-                SessionAction(stringResource(R.string.session_send_file), Icons.Outlined.UploadFile, enabled = canUpload && !observing, onClick = onUpload),
-                SessionAction(stringResource(R.string.session_download), Icons.Outlined.Download, enabled = canDownload, onClick = onDownload),
-                SessionAction(stringResource(R.string.session_file_transfers), Icons.Outlined.SwapVert, onClick = onShowFileTransfers),
-            ),
-        ))
+        if (connected && (supportsFileUpload || supportsFileDownload)) {
+            add(SessionAction(
+                stringResource(R.string.session_file_transfers),
+                Icons.Outlined.SwapVert,
+                submenu = buildList {
+                    if (supportsFileUpload) {
+                        add(SessionAction(stringResource(R.string.session_send_file), Icons.Outlined.UploadFile, enabled = canUpload && !observing, onClick = onUpload))
+                    }
+                    if (supportsFileDownload) {
+                        add(SessionAction(stringResource(R.string.session_download), Icons.Outlined.Download, enabled = canDownload, onClick = onDownload))
+                    }
+                    add(SessionAction(stringResource(R.string.session_file_transfers), Icons.Outlined.SwapVert, onClick = onShowFileTransfers))
+                },
+            ))
+        }
         add(SessionAction(
             stringResource(R.string.session_display_options),
             Icons.Outlined.Tune,
@@ -204,6 +214,7 @@ internal fun SessionToolbar(
                     add(SessionAction(stringResource(R.string.session_enable_curtain), onClick = { onCurtainRequest(true) }))
                     add(SessionAction(stringResource(R.string.session_disable_curtain), onClick = { onCurtainRequest(false) }))
                 }
+                add(SessionAction(stringResource(R.string.session_scaling), sectionHeader = true))
                 addAll(SessionScaling.entries.map { mode ->
                     SessionAction(stringResource(mode.label), checked = mode == scaling, onClick = { onScalingSelected(mode) })
                 })
@@ -213,8 +224,9 @@ internal fun SessionToolbar(
                     onClick = onToggleFullscreen,
                 ))
                 onResetZoom?.let { add(SessionAction(stringResource(R.string.session_reset_zoom), onClick = it)) }
+                add(SessionAction(stringResource(R.string.session_quality), sectionHeader = true))
                 addAll(QualityPreset.entries.map { preset ->
-                    SessionAction(preset.label(), checked = preset == quality, onClick = { onQualitySelected(preset) })
+                    SessionAction(preset.label(), enabled = connected && !changingQuality, checked = preset == quality, onClick = { onQualitySelected(preset) })
                 })
             },
         ))
@@ -339,6 +351,15 @@ private fun SessionActionMenu(root: SessionAction, onDismiss: () -> Unit) {
             )
         }
         items.forEach { item ->
+            if (item.sectionHeader) {
+                Text(
+                    text = item.label,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@forEach
+            }
             val leadingIcon: (@Composable () -> Unit)? = item.icon?.let { icon ->
                 { Icon(icon, contentDescription = null) }
             }

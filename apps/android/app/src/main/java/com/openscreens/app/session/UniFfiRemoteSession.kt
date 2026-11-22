@@ -193,11 +193,7 @@ internal class UniFfiRemoteSession(
             password = connection.vncPassword.ifEmpty { null },
             shared = true,
             localCursor = false,
-            quality = when (quality) {
-                QualityPreset.Low -> 3u
-                QualityPreset.Balanced -> 6u
-                QualityPreset.High -> 9u
-            },
+            quality = quality.jpegLevel,
             frameIntervalMs = 16u,
             wireguardConfig = connection.wireGuardConfig,
             wireguardDnsFallback = true,
@@ -273,7 +269,12 @@ internal class UniFfiRemoteSession(
                 return
             }
             session = connected
-            _events.emit(SessionEvent.Connected(width, height, connected.supportsCurtainMode()))
+            _events.emit(
+                SessionEvent.Connected(
+                    width, height, connected.supportsCurtainMode(),
+                    connected.isAppleRemote(), connected.supportsFileUpload(), connected.supportsFileDownload(),
+                ),
+            )
             Log.i(
                 TAG,
                 "connected to ${connection.address} (${connected.serverName()}) at " +
@@ -565,14 +566,18 @@ internal class UniFfiRemoteSession(
         }
     }
 
-    /**
-     * The Rust core picks encodings when the session is established; renegotiating
-     * quality mid-session is not exposed yet, so this only records the preference.
-     */
-    override fun setQuality(quality: QualityPreset) {
+    override suspend fun setQuality(quality: QualityPreset) {
+        val current = checkNotNull(session)
+        current.setQuality(quality.jpegLevel)
         this.quality = quality
-        Log.d(TAG, "setQuality ${quality.name} (takes effect on the next connection)")
     }
+
+    private val QualityPreset.jpegLevel: UByte
+        get() = when (this) {
+            QualityPreset.Low -> 3u
+            QualityPreset.Balanced -> 6u
+            QualityPreset.High -> 9u
+        }
 
     override suspend fun setViewport(
         x: Int,
