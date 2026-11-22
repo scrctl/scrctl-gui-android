@@ -241,13 +241,13 @@ internal fun Modifier.remoteTouchInput(
             trackPointer(pressTarget.first, pressTarget.second)
         }
 
-        fun beginPress() {
+        fun beginPress(now: Long) {
             if (pressActive || holdTouches == 0 ||
                 currentTouches != holdTouches
             ) {
                 return
             }
-            if (SystemClock.uptimeMillis() - holdStartedAt < longPressTimeout) return
+            if (now - holdStartedAt < longPressTimeout) return
             if (!trackpadMode && !isInsideContent(currentCentroid)) {
                 holdTouches = 0
                 return
@@ -394,20 +394,29 @@ internal fun Modifier.remoteTouchInput(
 
         while (true) {
             val event = try {
-                withTimeoutOrNull(50L) { awaitPointerEvent() }
+                if (holdTouches > 0) {
+                    val remaining = holdStartedAt + longPressTimeout - SystemClock.uptimeMillis()
+                    withTimeoutOrNull(remaining.coerceAtLeast(1L)) { awaitPointerEvent() }
+                } else {
+                    awaitPointerEvent()
+                }
             } catch (cancelled: CancellationException) {
                 endPress()
                 throw cancelled
             }
             if (event == null) {
-                // Fingers held still produce no events: this is
-                // where the long-press timer actually fires.
-                beginPress()
+                beginPress(SystemClock.uptimeMillis())
                 continue
             }
             val pressed = event.changes.filter { it.pressed }
             if (pressed.isEmpty()) break
-            if (pressed.size == currentTouches) beginPress()
+            val touchSetChanged = event.changes.any { it.pressed != it.previousPressed }
+            // A second finger may land after the hold deadline but before the
+            // timeout coroutine resumes. Resolve that hold at the first finger.
+            val originalStillPressed = pressed.any { it.id == down.id && it.previousPressed }
+            if (pressed.size == currentTouches || (holdTouches == 1 && originalStillPressed)) {
+                beginPress(event.changes.first().uptimeMillis)
+            }
             if (pressActive && pressButton == 1) {
                 val holdChanged = pressed.none { it.id == holdFinger }
                 if (holdChanged) holdFinger = pressed.first().id
@@ -435,7 +444,7 @@ internal fun Modifier.remoteTouchInput(
                     heldTransformStartDistance = null
                     if (wasTransforming && centeredTrackpad) viewport.startRecentering(bandSizePx, screenSizePx)
                     val finger = controls.singleOrNull()
-                    if (!wasTransforming && !holdChanged && finger != null && finger.previousPressed) {
+                    if (!wasTransforming && !touchSetChanged && !holdChanged && finger != null && finger.previousPressed) {
                         val delta = finger.position - finger.previousPosition
                         if (delta != Offset.Zero) {
                             pressTarget = moveTrackpad(delta, followsCursor = trackpadMode)
