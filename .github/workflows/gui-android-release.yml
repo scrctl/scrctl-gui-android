@@ -72,8 +72,8 @@ jobs:
           marketing="${marketing%%-*}"
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon \
-            -Popenscreens.versionCode="$(git rev-list --count HEAD)" \
-            -Popenscreens.versionName="$marketing"
+            -Pscrctl.versionCode="$(git rev-list --count HEAD)" \
+            -Pscrctl.versionName="$marketing"
           cp app/build/outputs/apk/release/app-release.apk \
             "$GITHUB_WORKSPACE/ScrctlGui-${tag}-android.apk"
       - name: Publish signed Android release

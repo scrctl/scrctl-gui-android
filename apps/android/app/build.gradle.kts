@@ -38,7 +38,7 @@ val rustLibraries = if (xdbEnabled) xdbOutput.dir("jniLibs").asFile
     else layout.projectDirectory.dir("src/main/jniLibs").asFile
 
 android {
-    namespace = "com.openscreens.app"
+    namespace = "org.scrctl.android.gui"
     compileSdk = 36
     if (xdbEnabled) ndkVersion = "29.0.14206865"
 
@@ -47,10 +47,10 @@ android {
         applicationId = "org.scrctl.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("openscreens.versionCode")
+        versionCode = providers.gradleProperty("scrctl.versionCode")
             .map(String::toInt)
             .getOrElse(1)
-        versionName = providers.gradleProperty("openscreens.versionName").getOrElse("0.1.0")
+        versionName = providers.gradleProperty("scrctl.versionName").getOrElse("0.1.0")
         buildConfigField("String", "BUILD_VERSION", "\"$buildVersion\"")
 
         ndk { abiFilters += rustAbis }
