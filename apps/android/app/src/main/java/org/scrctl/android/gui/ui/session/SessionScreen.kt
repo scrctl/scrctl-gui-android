@@ -21,7 +21,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -117,6 +116,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1198,7 +1198,8 @@ fun SessionScreen(
                         var pressTouches = 0
                         var pressButton = 0
                         var pressTarget = start
-                        var heldTransformActive = false
+                        var holdFinger: PointerId? = null
+                        var heldTransformStartDistance: Float? = null
                         var heldDragNavigated = false
                         var threeFingerSwipe: SwipeDirection? = null
                         var threeFingerStart = Offset.Zero
@@ -1255,11 +1256,14 @@ fun SessionScreen(
                                     pan,
                                 )
                             }
-                            if (!trackpadMode && button == 1) {
-                                trackpadPosition = Offset(
-                                    pressTarget.first.toFloat() / remoteWidth,
-                                    pressTarget.second.toFloat() / remoteHeight,
-                                )
+                            if (button == 1) {
+                                holdFinger = down.id
+                                if (!trackpadMode) {
+                                    trackpadPosition = Offset(
+                                        pressTarget.first.toFloat() / remoteWidth,
+                                        pressTarget.second.toFloat() / remoteHeight,
+                                    )
+                                }
                             }
                             pressActive = true
                             pressTouches = currentTouches
@@ -1388,37 +1392,43 @@ fun SessionScreen(
                             if (pressed.isEmpty()) break
                             if (pressed.size == currentTouches) beginPress()
                             if (pressActive && pressButton == 1) {
-                                if (pressed.size >= 2) {
-                                    val centroid = event.calculateCentroid()
-                                    val touchSetChanged = event.changes.any { it.pressed != it.previousPressed }
-                                    if (!heldTransformActive || touchSetChanged) {
+                                val holdChanged = pressed.none { it.id == holdFinger }
+                                if (holdChanged) holdFinger = pressed.first().id
+
+                                // Preserve single-finger dragging. With multiple fingers,
+                                // the first holds the button while the others move.
+                                val controls = if (pressed.size == 1) pressed
+                                    else pressed.filter { it.id != holdFinger }
+                                if (controls.size == 2) {
+                                    val (first, second) = controls
+                                    val centroid = (first.position + second.position) / 2f
+                                    val distance = (first.position - second.position).getDistance().coerceAtLeast(1f)
+                                    val startDistance = heldTransformStartDistance
+                                    if (startDistance == null || holdChanged || controls.any { !it.previousPressed }) {
                                         multiTouchStartZoom = zoom
                                         multiTouchStartPan = pan
-                                        multiTouchStartCentroid = pressed.fold(Offset.Zero) { sum, pointer ->
-                                            sum + pointer.position
-                                        } / pressed.size.toFloat()
-                                        multiTouchZoom = 1f
-                                        heldTransformActive = true
-                                    } else if (pressed.size == 2 && zoomEnabled) {
-                                        val scale = event.calculateZoom()
-                                        if (scale != 1f || event.calculatePan() != Offset.Zero) {
-                                            heldDragNavigated = true
-                                            multiTouchZoom *= scale
-                                            applyPinch(centroid, followsCursor = false)
-                                        }
+                                        multiTouchStartCentroid = centroid
+                                        heldTransformStartDistance = distance
+                                    } else if (zoomEnabled && controls.any { it.position != it.previousPosition }) {
+                                        heldDragNavigated = true
+                                        multiTouchZoom = distance / startDistance
+                                        applyPinch(centroid, followsCursor = false)
                                     }
                                 } else {
-                                    val finger = pressed.single()
-                                    val delta = finger.position - finger.previousPosition
-                                    if (!heldTransformActive && finger.previousPressed && delta != Offset.Zero) {
-                                        pressTarget = moveTrackpad(
-                                            delta,
-                                            followsCursor = trackpadMode && !heldDragNavigated,
-                                        )
-                                        session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
-                                        trackPointer(pressTarget.first, pressTarget.second)
+                                    val wasTransforming = heldTransformStartDistance != null
+                                    heldTransformStartDistance = null
+                                    val finger = controls.singleOrNull()
+                                    if (!wasTransforming && !holdChanged && finger != null && finger.previousPressed) {
+                                        val delta = finger.position - finger.previousPosition
+                                        if (delta != Offset.Zero) {
+                                            pressTarget = moveTrackpad(
+                                                delta,
+                                                followsCursor = trackpadMode && !heldDragNavigated,
+                                            )
+                                            session.sendPointer(pressTarget.first, pressTarget.second, pressButton)
+                                            trackPointer(pressTarget.first, pressTarget.second)
+                                        }
                                     }
-                                    heldTransformActive = false
                                 }
                                 pressIndicator = pressIndicator?.copy(position = trackpadPointOnCanvas())
                                 event.changes.forEach { it.consume() }
