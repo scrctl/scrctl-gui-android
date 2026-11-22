@@ -239,7 +239,6 @@ fun SessionScreen(
     var keyboardActive by remember { mutableStateOf(false) }
     var modifiers by remember { mutableIntStateOf(0) }
     var backgroundedAt by remember { mutableLongStateOf(0L) }
-    var cursor by remember { mutableStateOf<SessionEvent.Cursor?>(null) }
     var cursorPosition by remember { mutableStateOf<IntOffset?>(null) }
     var trackpadMode by rememberSaveable { mutableStateOf(false) }
     var desktopScreens by remember { mutableStateOf<List<DisplayScreen>>(emptyList()) }
@@ -487,7 +486,6 @@ fun SessionScreen(
                     status = SessionStatus.Connecting
                     val unfinished = resetTransferProgress()
                     scope.launch { discardDownload(unfinished) }
-                    cursor = null
                     cursorPosition = null
                     desktopScreens = emptyList()
                     selectedDisplayId = null
@@ -547,7 +545,6 @@ fun SessionScreen(
                     status = SessionStatus.Connected
                     frame = event
                 }
-                is SessionEvent.Cursor -> cursor = event
                 is SessionEvent.UploadRequest -> {
                     val pending = pendingUpload?.takeIf { it.handle == event.handle }
                     if (pending != null && uploadJob == null) {
@@ -1606,7 +1603,6 @@ fun SessionScreen(
                             dstSize = IntSize((right - left).coerceAtLeast(1), (bottom - top).coerceAtLeast(1)),
                             filterQuality = if (zoom > 1.2f) FilterQuality.Medium else FilterQuality.Low,
                         )
-                        drawRemoteCursor(cursor, cursorPosition, scaleX, origin)
                     }
                     if (zoomed) {
                         drawDesktop()
@@ -1626,6 +1622,12 @@ fun SessionScreen(
                             drawDesktop()
                             drawPath(outline, Color.White.copy(alpha = 0.08f), style = Stroke(1.dp.toPx()))
                         }
+                    }
+                    if (!observing) {
+                        val position = cursorPosition
+                        val x = position?.x?.coerceIn(0, remoteWidth - 1)?.toFloat() ?: (remoteWidth * 0.5f)
+                        val y = position?.y?.coerceIn(0, remoteHeight - 1)?.toFloat() ?: (remoteHeight * 0.55f)
+                        drawLocalCursor(Offset(origin.x + x * scaleX, origin.y + y * scaleY))
                     }
                 }
             } else {
@@ -2007,28 +2009,21 @@ private fun visibleServerRect(
     return intArrayOf(outLeft, outTop, outRight - outLeft, outBottom - outTop)
 }
 
-/**
- * Draws the cursor in the same screen coordinates as the desktop.
- */
-private fun DrawScope.drawRemoteCursor(
-    cursor: SessionEvent.Cursor?,
-    position: IntOffset?,
-    scale: Float,
-    origin: Offset,
-) {
-    if (cursor == null || position == null || scale <= 0f) return
-    val left = origin.x + (position.x - cursor.hotspotX) * scale
-    val top = origin.y + (position.y - cursor.hotspotY) * scale
-    val width = (cursor.bitmap.width * scale).roundToInt().coerceAtLeast(1)
-    val height = (cursor.bitmap.height * scale).roundToInt().coerceAtLeast(1)
-    drawImage(
-        image = cursor.bitmap.asImageBitmap(),
-        srcOffset = IntOffset.Zero,
-        srcSize = IntSize(cursor.bitmap.width, cursor.bitmap.height),
-        dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
-        dstSize = IntSize(width, height),
-        filterQuality = FilterQuality.Low,
-    )
+/** Draws a fixed-size arrow whose tip is at the local input position. */
+private fun DrawScope.drawLocalCursor(tip: Offset) {
+    val unit = 1.dp.toPx()
+    val arrow = Path().apply {
+        moveTo(tip.x, tip.y)
+        lineTo(tip.x, tip.y + 18 * unit)
+        lineTo(tip.x + 4.5f * unit, tip.y + 14 * unit)
+        lineTo(tip.x + 8 * unit, tip.y + 20 * unit)
+        lineTo(tip.x + 11 * unit, tip.y + 18.5f * unit)
+        lineTo(tip.x + 7.5f * unit, tip.y + 12.5f * unit)
+        lineTo(tip.x + 14 * unit, tip.y + 12.5f * unit)
+        close()
+    }
+    drawPath(arrow, Color.White)
+    drawPath(arrow, Color.Black, style = Stroke(unit))
 }
 
 @Composable
