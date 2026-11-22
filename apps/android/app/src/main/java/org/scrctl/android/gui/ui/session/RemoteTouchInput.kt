@@ -89,7 +89,7 @@ internal fun Modifier.remoteTouchInput(
     val touchSlop = viewConfiguration.touchSlop
     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis.toLong()
     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
-    val doubleTapSlop = touchSlop * 2.5f
+    val doubleTapSlop = max(40.dp.toPx(), touchSlop * 2.5f)
     val wheelStep = WHEEL_STEP_PX
     val screenSize = size
 
@@ -163,9 +163,11 @@ internal fun Modifier.remoteTouchInput(
         val startedOnImage = trackpadMode || isInsideContent(down.position)
         var movedInLetterbox = false
         val previousTap = taps.pending
-        val isDoubleTap = startedOnImage && previousTap != null &&
-            down.uptimeMillis - previousTap.time <= doubleTapTimeout &&
-            (down.position - previousTap.position).getDistance() <= doubleTapSlop
+        val dragTap = previousTap?.takeIf {
+            (startedOnImage || hybridMode) &&
+                down.uptimeMillis - it.time in 0L..doubleTapTimeout &&
+                (down.position - it.position).getDistance() <= doubleTapSlop
+        }
         if (previousTap != null) flushPendingTap()
 
         var mode = GestureMode.Pending
@@ -180,7 +182,8 @@ internal fun Modifier.remoteTouchInput(
         )
         var last = start
         var lastTouch = down.position
-        val downTime = SystemClock.uptimeMillis()
+        val downTime = down.uptimeMillis
+        var tapEndedAt = downTime
 
         // Two-finger state: a pinch is anchored at the touch
         // centroid, a drag scrolls at 1x and pans when zoomed.
@@ -200,7 +203,7 @@ internal fun Modifier.remoteTouchInput(
         // Long press holds a button down for dragging: one finger
         // holds the left button, two the right, three the middle.
         // Movement or a change in finger count cancels a pending hold.
-        var holdTouches = if (startedOnImage) 1 else 0
+        var holdTouches = if (startedOnImage || dragTap != null) 1 else 0
         var holdStartedAt = down.uptimeMillis
         var holdAnchor = down.position
         var currentTouches = 1
@@ -239,14 +242,14 @@ internal fun Modifier.remoteTouchInput(
             trackPointer(pressTarget.first, pressTarget.second)
         }
 
-        fun beginPress(now: Long, immediately: Boolean = false) {
+        fun beginPress(now: Long, tapTarget: PendingTap? = null) {
             if (pressActive || holdTouches == 0 ||
                 currentTouches != holdTouches
             ) {
                 return
             }
-            if (!immediately && now - holdStartedAt < longPressTimeout) return
-            if (!trackpadMode && !isInsideContent(currentCentroid)) {
+            if (tapTarget == null && now - holdStartedAt < longPressTimeout) return
+            if (tapTarget == null && !trackpadMode && !isInsideContent(currentCentroid)) {
                 holdTouches = 0
                 return
             }
@@ -255,7 +258,9 @@ internal fun Modifier.remoteTouchInput(
                 2 -> 1 shl 2
                 else -> 1 shl 1
             }
-            pressTarget = if (trackpadMode) {
+            pressTarget = if (tapTarget != null) {
+                tapTarget.x to tapTarget.y
+            } else if (trackpadMode) {
                 trackpadTarget()
             } else {
                 remotePoint(
@@ -385,7 +390,7 @@ internal fun Modifier.remoteTouchInput(
             scheduleTwoFingerTap(position)
         }
 
-        if (isDoubleTap) beginPress(down.uptimeMillis, immediately = true)
+        if (dragTap != null) beginPress(down.uptimeMillis, dragTap)
 
         while (true) {
             val event = try {
@@ -404,7 +409,11 @@ internal fun Modifier.remoteTouchInput(
                 continue
             }
             val pressed = event.changes.filter { it.pressed }
-            if (pressed.isEmpty()) break
+            if (pressed.isEmpty()) {
+                tapEndedAt = event.changes.firstOrNull { it.id == down.id }?.uptimeMillis
+                    ?: event.changes.first().uptimeMillis
+                break
+            }
             val touchSetChanged = event.changes.any { it.pressed != it.previousPressed }
             // A second finger may land after the hold deadline but before the
             // timeout coroutine resumes. Resolve that hold at the first finger.
@@ -706,7 +715,7 @@ internal fun Modifier.remoteTouchInput(
                         tapTarget.first,
                         tapTarget.second,
                         down.position,
-                        SystemClock.uptimeMillis(),
+                        tapEndedAt,
                     )
                 }
             }
