@@ -623,31 +623,30 @@ internal class UniFfiRemoteSession(
             val unchanged = alignedLeft == viewportX && alignedTop == viewportY &&
                 alignedWidth == viewportWidth && alignedHeight == viewportHeight &&
                 scale == displayScale && front != null
-            if (!unchanged) {
-                if (!installViewport(
-                        serverWidth,
-                        serverHeight,
-                        alignedLeft,
-                        alignedTop,
-                        alignedWidth,
-                        alignedHeight,
-                        scale,
-                    )
-                ) {
-                    _events.emit(
-                        SessionEvent.Failed(
-                            context.getString(R.string.session_error_out_of_memory_viewport),
-                        ),
-                    )
-                    return
-                }
-                viewportEmitted = false
-                Log.d(
-                    TAG,
-                    "viewport ${alignedLeft},${alignedTop} ${alignedWidth}x$alignedHeight " +
-                        "sampling 1/$scale",
+            if (unchanged) return
+            if (!installViewport(
+                    serverWidth,
+                    serverHeight,
+                    alignedLeft,
+                    alignedTop,
+                    alignedWidth,
+                    alignedHeight,
+                    scale,
                 )
+            ) {
+                _events.emit(
+                    SessionEvent.Failed(
+                        context.getString(R.string.session_error_out_of_memory_viewport),
+                    ),
+                )
+                return
             }
+            viewportEmitted = false
+            Log.d(
+                TAG,
+                "viewport ${alignedLeft},${alignedTop} ${alignedWidth}x$alignedHeight " +
+                    "sampling 1/$scale",
+            )
         }
 
         // Refresh the local crop while keeping incremental requests full-desktop.
@@ -909,12 +908,7 @@ internal class UniFfiRemoteSession(
                 rect.x.toInt() + rect.width.toInt() >= viewportX + viewportWidth &&
                 rect.y.toInt() + rect.height.toInt() >= viewportY + viewportHeight
         }
-        // Keep the current frame visible while copying a new crop from the
-        // engine framebuffer. An existing crop can use sparse damage.
-        if (!coversViewport && viewportEmitted) {
-            front?.let { copyInto(target, it) }
-        }
-
+        val copyPreviousFrame = !coversViewport && viewportEmitted
         var wrote = false
         for (rect in rectangles) {
             val left = maxOf(rect.x.toInt(), viewportX)
@@ -949,6 +943,10 @@ internal class UniFfiRemoteSession(
                         scale = scale.toUShort(),
                     )
                     if (pixels != null && pixels.size >= count * 4) {
+                        // Seed the back buffer only if there is visible damage to paint.
+                        if (!wrote && copyPreviousFrame) {
+                            front?.let { copyInto(target, it) }
+                        }
                         val argb = scratchFor(count)
                         bgraBytesToArgb(pixels, count, argb)
                         target.setPixels(
