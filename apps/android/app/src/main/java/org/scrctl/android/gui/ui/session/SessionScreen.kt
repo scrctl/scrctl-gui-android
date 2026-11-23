@@ -988,7 +988,8 @@ fun SessionScreen(
                 // can overflow it into the remaining window area.
                 .remoteTouchInput(
                     session, viewport, remoteWidth, remoteHeight, pointerMode, zoomEnabled,
-                    observing, screenSizePx, bandSizePx, minimumZoom, maximumZoom,
+                    observing, isAppleRemote, desktopScreens, selectedDisplayId,
+                    screenSizePx, bandSizePx, minimumZoom, maximumZoom,
                     scope, pointerMemory, taps, twoFingerTaps, trackPointer,
                     onWheelPosition = { cursorPosition = it },
                     onPressIndicator = { pressIndicator = it },

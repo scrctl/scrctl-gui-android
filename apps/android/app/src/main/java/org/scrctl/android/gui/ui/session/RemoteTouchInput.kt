@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.scrctl.android.gui.data.SessionPointerMode
+import org.scrctl.android.gui.session.DisplayScreen
 import org.scrctl.android.gui.session.RemoteSession
 import org.scrctl.android.gui.session.sendChord
 
@@ -39,6 +40,9 @@ internal fun Modifier.remoteTouchInput(
     pointerMode: SessionPointerMode,
     zoomEnabled: Boolean,
     observing: Boolean,
+    appleRemote: Boolean,
+    displays: List<DisplayScreen>,
+    selectedDisplayId: Int?,
     screenSizePx: IntSize,
     bandSizePx: IntSize,
     minimumZoom: Float,
@@ -53,7 +57,7 @@ internal fun Modifier.remoteTouchInput(
     onToggleChrome: () -> Unit,
 ): Modifier = pointerInput(
     session, viewport, remoteWidth, remoteHeight, pointerMode, zoomEnabled, observing,
-    screenSizePx, bandSizePx, minimumZoom, maximumZoom,
+    screenSizePx, bandSizePx, minimumZoom, maximumZoom, appleRemote, displays, selectedDisplayId,
 ) {
     val trackpadMode = pointerMode == SessionPointerMode.Trackpad
     val hybridMode = pointerMode == SessionPointerMode.Hybrid
@@ -90,8 +94,7 @@ internal fun Modifier.remoteTouchInput(
     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis.toLong()
     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
     val doubleTapSlop = max(40.dp.toPx(), touchSlop * 2.5f)
-    // Match the iOS distance per wheel tick across display densities.
-    val wheelStep = 24.dp.toPx()
+    val baseWheelStep = 24.dp.toPx()
     val screenSize = size
 
     fun trackpadTarget(): Pair<Int, Int> =
@@ -152,9 +155,9 @@ internal fun Modifier.remoteTouchInput(
         }
     }
 
-    fun sendWheel(mask: Int) {
-        val (x, y) = if (trackpadMode) trackpadTarget() else pointerMemory.resolve(remoteWidth, remoteHeight)
-        onWheelPosition(IntOffset(x, y))
+    fun sendWheel(target: IntOffset, mask: Int) {
+        val (x, y) = target
+        onWheelPosition(target)
         session.sendPointer(x, y, mask)
         session.sendPointer(x, y, 0)
     }
@@ -592,6 +595,13 @@ internal fun Modifier.remoteTouchInput(
                             }
                         }
 
+                        val (x, y) = if (trackpadMode) trackpadTarget()
+                            else pointerMemory.resolve(remoteWidth, remoteHeight)
+                        val wheelTarget = IntOffset(x, y)
+                        val wheelStep = remoteWheelStep(
+                            baseWheelStep, appleRemote, IntSize(remoteWidth, remoteHeight),
+                            displays, selectedDisplayId, wheelTarget,
+                        )
                         scrollAccum += panChange
                         var steps = 0
                         while (steps < MAX_WHEEL_STEPS_PER_EVENT) {
@@ -602,6 +612,7 @@ internal fun Modifier.remoteTouchInput(
                                 val fingersUp = scrollAccum.y < 0f
                                 // Natural touch scrolling: content follows fingers.
                                 sendWheel(
+                                    wheelTarget,
                                     if (fingersUp) WHEEL_DOWN else WHEEL_UP,
                                 )
                                 scrollAccum = Offset(
@@ -612,6 +623,7 @@ internal fun Modifier.remoteTouchInput(
                             } else {
                                 val fingersLeft = scrollAccum.x < 0f
                                 sendWheel(
+                                    wheelTarget,
                                     if (fingersLeft) WHEEL_RIGHT else WHEEL_LEFT,
                                 )
                                 scrollAccum = Offset(
@@ -759,6 +771,37 @@ internal fun Modifier.remoteTouchInput(
             }
         }
     }
+}
+
+internal fun remoteWheelStep(
+    baseStep: Float,
+    appleRemote: Boolean,
+    framebuffer: IntSize,
+    displays: List<DisplayScreen>,
+    selectedDisplayId: Int?,
+    target: IntOffset,
+): Float {
+    if (!appleRemote) return baseStep
+
+    val validDisplays = displays.filter { it.width > 0 && it.height > 0 }
+    val selected = validDisplays.firstOrNull { it.id == selectedDisplayId }
+    // Apple can report per-display sizes with every origin set to (0, 0).
+    val hasOrigins = validDisplays.size <= 1 || validDisplays.any { it.x != 0 || it.y != 0 }
+    val containing = if (selected == null && hasOrigins) {
+        validDisplays.singleOrNull {
+            target.x in it.x until it.x + it.width && target.y in it.y until it.y + it.height
+        }
+    } else {
+        null
+    }
+    // The server advertises the primary display first when origins are missing.
+    val active = selected ?: containing ?: validDisplays.firstOrNull()
+    val shortEdge = if (active != null) {
+        minOf(active.width, active.height)
+    } else {
+        minOf(framebuffer.width, framebuffer.height)
+    }
+    return baseStep / (shortEdge / 1080f).coerceIn(1f, 4f)
 }
 
 internal fun trackpadPinchDominates(
