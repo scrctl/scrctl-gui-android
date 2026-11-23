@@ -109,6 +109,8 @@ import org.scrctl.android.gui.data.ConnectionGroup
 import org.scrctl.android.gui.data.ConnectionPreviewStore
 import org.scrctl.android.gui.data.LibrarySortOrder
 import org.scrctl.android.gui.data.NearbyDevice
+import org.scrctl.android.gui.data.NearbyServer
+import org.scrctl.android.gui.data.RemotePlatform
 import org.scrctl.android.gui.data.sortedForLibrary
 import org.scrctl.android.gui.ios.IphoneIntegration
 import org.scrctl.android.gui.ui.theme.ThemedSystemBarIcons
@@ -159,6 +161,7 @@ internal fun LibraryScreen(
     onDeleteGroup: (id: String) -> Unit,
     onMoveConnection: (id: String, offset: Int, orderedIds: List<String>) -> Unit,
     onOpenConnection: (Connection) -> Unit,
+    onConnectAsGuest: (Connection) -> Unit,
     onObserveConnection: (Connection) -> Unit,
     onOpenInNewWindow: (Connection) -> Unit,
     onAddConnection: () -> Unit,
@@ -166,6 +169,7 @@ internal fun LibraryScreen(
     onOpenSettings: () -> Unit,
     onQuickConnect: (host: String, port: Int, username: String?) -> Unit,
     onOpenNearby: (NearbyDevice) -> Unit,
+    onConnectNearbyAsGuest: (NearbyServer) -> Unit,
 ) {
     ThemedSystemBarIcons()
     val previewState by previews.state.collectAsStateWithLifecycle()
@@ -417,6 +421,7 @@ internal fun LibraryScreen(
                 iphone = iphone,
                 discoveryEnabled = discoverNearby,
                 onOpen = onOpenNearby,
+                onConnectAsGuest = onConnectNearbyAsGuest,
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier
                     .fillMaxSize()
@@ -492,6 +497,9 @@ internal fun LibraryScreen(
                                     previewVersion = previewState.version(connection.id),
                                     onClick = { onOpenConnection(connection) },
                                     onObserve = { onObserveConnection(connection) },
+                                    onConnectAsGuest = if (connection.platform == RemotePlatform.MacOS) {
+                                        { onConnectAsGuest(connection) }
+                                    } else null,
                                     onEdit = { onEditConnection(connection) },
                                     onDelete = { requestDelete(connection) },
                                     onOpenInNewWindow = { onOpenInNewWindow(connection) },
@@ -525,6 +533,9 @@ internal fun LibraryScreen(
                                     connection = connection,
                                     onClick = { onOpenConnection(connection) },
                                     onObserve = { onObserveConnection(connection) },
+                                    onConnectAsGuest = if (connection.platform == RemotePlatform.MacOS) {
+                                        { onConnectAsGuest(connection) }
+                                    } else null,
                                     onEdit = { onEditConnection(connection) },
                                     onDelete = { requestDelete(connection) },
                                     onOpenInNewWindow = { onOpenInNewWindow(connection) },
@@ -936,6 +947,7 @@ private fun ConnectionCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onObserve: () -> Unit,
+    onConnectAsGuest: (() -> Unit)?,
     onOpenInNewWindow: () -> Unit,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
@@ -1030,6 +1042,12 @@ private fun ConnectionCard(
         }
     }
     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+        if (onConnectAsGuest != null) {
+            GuestMenuItem {
+                menuExpanded = false
+                onConnectAsGuest()
+            }
+        }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.library_connect_in_observe_mode)) },
             leadingIcon = { Icon(Icons.Outlined.Visibility, contentDescription = null) },
@@ -1079,6 +1097,7 @@ private fun ConnectionRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onObserve: () -> Unit,
+    onConnectAsGuest: (() -> Unit)?,
     onOpenInNewWindow: () -> Unit,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
@@ -1157,6 +1176,12 @@ private fun ConnectionRow(
         }
     }
     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+        if (onConnectAsGuest != null) {
+            GuestMenuItem {
+                menuExpanded = false
+                onConnectAsGuest()
+            }
+        }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.library_connect_in_observe_mode)) },
             leadingIcon = { Icon(Icons.Outlined.Visibility, contentDescription = null) },
@@ -1236,6 +1261,7 @@ private fun NearbyContent(
     iphone: IphoneIntegration?,
     discoveryEnabled: Boolean,
     onOpen: (NearbyDevice) -> Unit,
+    onConnectAsGuest: (NearbyServer) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1297,6 +1323,9 @@ private fun NearbyContent(
             NearbyRow(
                 device = device,
                 onClick = { onOpen(device) },
+                onConnectAsGuest = if (device is NearbyDevice.Vnc) {
+                    { onConnectAsGuest(device.server) }
+                } else null,
                 enabled = device !is NearbyDevice.Iphone || status?.busy != true,
                 onPrepare = if (device is NearbyDevice.Iphone && iphone != null && !iphone.discovery.busy) {
                     { iphone.prepare(device) }
@@ -1360,80 +1389,95 @@ private fun NearbyRow(
     onClick: () -> Unit,
     enabled: Boolean,
     onPrepare: (() -> Unit)?,
+    onConnectAsGuest: (() -> Unit)?,
 ) {
     val gradient = autoAccent(device.name).gradient
     val subtitle = device.subtitle(stringResource(R.string.library_nearby_screen_mirroring))
 
-    ElevatedCard(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = enabled,
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    var menuExpanded by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    Box {
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth().clip(shape).combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClick = onConnectAsGuest?.let { { menuExpanded = true } },
+            ),
+            shape = shape,
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(listOf(gradient.start, gradient.end))),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = if (device is NearbyDevice.Iphone) Icons.Outlined.PhoneIphone
-                        else Icons.Outlined.Monitor,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = device.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = if (device is NearbyDevice.Vnc) FontFamily.Monospace else null,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (onPrepare != null) {
-                var actionsOpen by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(onClick = { actionsOpen = true }) {
-                        Icon(Icons.Outlined.MoreVert, stringResource(R.string.library_more))
-                    }
-                    DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.iphone_prepare)) },
-                            onClick = {
-                                actionsOpen = false
-                                onPrepare()
-                            },
-                        )
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Brush.linearGradient(listOf(gradient.start, gradient.end))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (device is NearbyDevice.Iphone) Icons.Outlined.PhoneIphone
+                            else Icons.Outlined.Monitor,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = device.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = if (device is NearbyDevice.Vnc) FontFamily.Monospace else null,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (onPrepare != null) {
+                    var actionsOpen by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { actionsOpen = true }) {
+                            Icon(Icons.Outlined.MoreVert, stringResource(R.string.library_more))
+                        }
+                        DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.iphone_prepare)) },
+                                onClick = {
+                                    actionsOpen = false
+                                    onPrepare()
+                                },
+                            )
+                        }
                     }
                 }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+        }
+        if (onConnectAsGuest != null) {
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                GuestMenuItem {
+                    menuExpanded = false
+                    onConnectAsGuest()
+                }
+            }
         }
     }
 }
@@ -1477,4 +1521,12 @@ private fun EmptyLibrary(onAddConnection: () -> Unit, modifier: Modifier = Modif
             Text(stringResource(R.string.library_empty_action))
         }
     }
+}
+
+@Composable
+private fun GuestMenuItem(onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(stringResource(R.string.library_mac_connect_as_guest)) },
+        onClick = onClick,
+    )
 }

@@ -324,11 +324,10 @@
     <string name="session_curtain_error">Could not send Curtain Mode request</string>
     <string name="session_reconnect">Reconnect</string>
     <string name="session_retry_in">Retrying in %1$d s…</string>
-    <string name="editor_request_mac_sharing">Mac account — request shared session</string>
     <string name="session_mac_choice_title">Choose a Mac Session</string>
     <string name="session_mac_choice_hint">Another user is signed in on this Mac. Open a personal session with your Mac account, or ask to share the active session.</string>
-    <string name="session_mac_personal">Open Personal Session</string>
-    <string name="session_mac_share">Request Shared Session</string>
+    <string name="session_mac_personal">Open my desktop</string>
+    <string name="session_mac_share">Join the current desktop</string>
     <string name="session_pointer_hybrid">Hybrid Mode</string>
     <string name="session_reset_zoom">Reset Zoom</string>
     <string name="session_display_options">Display Options</string>
@@ -370,4 +369,5 @@
     <string name="session_toolbar_remove">Move to More</string>
     <string name="session_mac_request_permission">Ask for Permission</string>
     <string name="session_mac_guest_rejected">The Mac did not grant screen sharing permission.</string>
+    <string name="library_mac_connect_as_guest">Ask to Share as Guest (Mac)</string>
 </resources>

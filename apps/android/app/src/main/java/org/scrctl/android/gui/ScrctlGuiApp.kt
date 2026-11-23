@@ -71,6 +71,7 @@ fun ScrctlGuiApp(viewModel: MainViewModel = viewModel()) {
                         onDeleteGroup = viewModel::deleteGroup,
                         onMoveConnection = viewModel::moveConnection,
                         onOpenConnection = { viewModel.navigate(Route.Session(it.id)) },
+                        onConnectAsGuest = { viewModel.navigate(Route.Session(it.id, asGuest = true)) },
                         onObserveConnection = {
                             viewModel.navigate(Route.Session(it.id, observeOnly = true))
                         },
@@ -88,6 +89,13 @@ fun ScrctlGuiApp(viewModel: MainViewModel = viewModel()) {
                         onEditConnection = { viewModel.navigate(Route.Editor(it.id)) },
                         onOpenSettings = { viewModel.navigate(Route.Settings) },
                         onQuickConnect = viewModel::quickConnect,
+                        onConnectNearbyAsGuest = { server ->
+                            viewModel.openEndpoint(
+                                Connection(name = server.name, host = server.host, port = server.port),
+                                nearby = true,
+                                asGuest = true,
+                            )
+                        },
                         onOpenNearby = { device ->
                             when (device) {
                                 is NearbyDevice.Vnc -> with(device.server) {
@@ -149,6 +157,7 @@ fun ScrctlGuiApp(viewModel: MainViewModel = viewModel()) {
                             sshKey = viewModel.sshKey(connection.ssh?.keyId),
                             quality = quality,
                             observeOnly = current.observeOnly,
+                            asGuest = current.asGuest,
                             initialPointerMode = viewModel.cursorMode(connection),
                             onPointerModeChanged = { viewModel.setCursorMode(connection, it) },
                             onQualityChange = {

@@ -60,10 +60,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         openEndpoint(Connection(name = host, host = host, port = port, username = username.orEmpty()))
     }
 
-    fun openEndpoint(target: Connection, nearby: Boolean = false) {
+    fun openEndpoint(target: Connection, nearby: Boolean = false, asGuest: Boolean = false) {
         val saved = connections.value.matchingEndpoint(target)
         if (saved == null && !nearby) connectionStore.save(target)
-        navigate(Route.Session(saved?.id ?: target.id, if (saved == null && nearby) target else null))
+        navigate(Route.Session(saved?.id ?: target.id, if (saved == null && nearby) target else null, asGuest = asGuest))
     }
 
     fun rememberLogin(connection: Connection): Boolean = connectionStore.rememberLogin(connection)
@@ -188,5 +188,10 @@ internal sealed interface Route {
     data object Settings : Route
     data object SshKeys : Route
     data class Editor(val connectionId: String?, val draft: Connection? = null) : Route
-    data class Session(val connectionId: String, val nearby: Connection? = null, val observeOnly: Boolean = false) : Route
+    data class Session(
+        val connectionId: String,
+        val nearby: Connection? = null,
+        val observeOnly: Boolean = false,
+        val asGuest: Boolean = false,
+    ) : Route
 }

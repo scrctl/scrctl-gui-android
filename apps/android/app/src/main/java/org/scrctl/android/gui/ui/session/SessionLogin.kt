@@ -8,10 +8,10 @@ import org.scrctl.android.gui.data.Connection
 import org.scrctl.android.gui.session.CredentialChallenge
 
 /** Lives with the session composition. Only an accepted, opted-in attempt reaches storage. */
-internal class SessionLogin(connection: Connection) {
+internal class SessionLogin(connection: Connection, asGuest: Boolean = false) {
     var attempt by mutableStateOf(connection)
         private set
-    var usingGuestAccess by mutableStateOf(false)
+    var usingGuestAccess by mutableStateOf(asGuest)
         private set
     var generation by mutableIntStateOf(0)
         private set

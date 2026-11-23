@@ -25,6 +25,20 @@ class SessionLoginTest {
         assertEquals("", SessionLogin(profile).attempt.vncPassword)
     }
 
+    @Test fun guestLaunchCanSwitchToAccountLoginWithoutSavingGuestCredentials() {
+        val login = SessionLogin(profile, asGuest = true)
+        assertTrue(login.usingGuestAccess)
+        assertNull(login.accepted())
+
+        login.failed(CredentialChallenge.MacGuestRejected)
+        login.retry("me", "correct", false)
+
+        assertFalse(login.usingGuestAccess)
+        assertEquals(1, login.generation)
+        assertEquals("me", login.attempt.username)
+        assertNull(login.accepted())
+    }
+
     @Test fun acceptedOptInCanBeSavedOnce() {
         val login = SessionLogin(profile)
         login.failed(CredentialChallenge.MissingPassword)

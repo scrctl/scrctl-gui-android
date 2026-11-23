@@ -160,6 +160,7 @@ fun SessionScreen(
     onConnected: () -> Unit,
     onExit: () -> Unit,
     observeOnly: Boolean = false,
+    asGuest: Boolean = false,
     initialPointerMode: SessionPointerMode,
     onPointerModeChanged: (SessionPointerMode) -> Unit,
 ) {
@@ -176,7 +177,7 @@ fun SessionScreen(
     var observing by rememberSaveable(connection.id, observeOnly) {
         mutableStateOf(observeOnly || connection.startInObserveMode)
     }
-    val login = remember(connection.id) { SessionLogin(connection) }
+    val login = remember(connection.id) { SessionLogin(connection, asGuest) }
     val session: RemoteSession = remember(connection.id, observeOnly, login.generation) {
         SessionProvider.create(context, login.attempt.copy(sharedClipboard = clipboardSharing), quality, sshKey, startInObserveMode = observing)
     }
@@ -708,7 +709,7 @@ fun SessionScreen(
     }
 
     LaunchedEffect(session) {
-        session.connect()
+        session.connect(if (login.usingGuestAccess) MacSessionChoice.Guest else null)
     }
 
     // A backgrounded app may come back with a suspended socket: the poller is still

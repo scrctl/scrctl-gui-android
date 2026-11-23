@@ -190,7 +190,7 @@ internal class UniFfiRemoteSession(
             host = connection.host,
             port = connection.port.toUShort(),
             username = connection.username.ifBlank { null },
-            password = connection.vncPassword.ifEmpty { null },
+            password = connection.vncPassword.takeIf { macSessionChoice != MacSessionChoice.Guest && it.isNotEmpty() },
             shared = true,
             localCursor = true,
             quality = quality.jpegLevel,
@@ -208,7 +208,7 @@ internal class UniFfiRemoteSession(
         val target = when {
             macSessionChoice == MacSessionChoice.Guest -> MacSessionTarget.GUEST
             macSessionChoice == MacSessionChoice.Personal -> MacSessionTarget.PERSONAL
-            macSessionChoice == MacSessionChoice.Share || connection.requestMacSharing -> MacSessionTarget.SHARED
+            macSessionChoice == MacSessionChoice.Share -> MacSessionTarget.SHARED
             else -> null
         }
         val attempt = synchronized(attemptLock) {
