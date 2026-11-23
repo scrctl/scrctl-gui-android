@@ -819,6 +819,7 @@ fun SessionScreen(
     val sendKeysym: (Int) -> Unit = { keysym ->
         val active = MODIFIER_KEYS.filter { modifiers and it.flag != 0 }
         sendChord(keysym, active.map { it.keysym }, session::sendKey)
+        modifiers = 0
     }
 
     val selectQuality: (QualityPreset) -> Unit = { preset ->
@@ -962,7 +963,7 @@ fun SessionScreen(
             HiddenKeyboardField(
                 enabled = keyboardActive,
                 focusRequester = focusRequester,
-                onCodePoint = { code -> sendKeysym(if (code == '\n'.code) KEY_RETURN else x11Keysym(code)) },
+                onCodePoint = { code -> sendKeysym(x11Keysym(code)) },
                 onBackspace = { sendKeysym(KEY_BACKSPACE) },
                 onFocusChange = { focused -> if (!focused) keyboardActive = false },
                 modifier = Modifier.align(Alignment.TopStart),
@@ -1361,7 +1362,7 @@ private fun HiddenKeyboardField(
             showKeyboardOnFocus = true,
         ),
         cursorBrush = SolidColor(Color.Transparent),
-        lineLimits = TextFieldLineLimits.SingleLine,
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 1),
     )
 }
 
@@ -1549,7 +1550,7 @@ internal const val KEY_ALT = 0xFFE9
 internal const val KEY_SUPER = 0xFFEB
 internal const val KEY_ESCAPE = 0xFF1B
 internal const val KEY_TAB = 0xFF09
-private const val KEY_RETURN = 0xFF0D
+internal const val KEY_RETURN = 0xFF0D
 private const val KEY_BACKSPACE = 0xFF08
 internal const val KEY_LEFT = 0xFF51
 internal const val KEY_UP = 0xFF52
@@ -1589,18 +1590,6 @@ private fun Modifier.touchBarrier(): Modifier = pointerInput(Unit) {
         while (true) {
             awaitPointerEvent()
         }
-    }
-}
-
-/**
- * Maps a character to an X11 keysym. Printable Latin-1 keeps its code point; everything
- * else uses the Unicode keysym range, matching how RFB servers translate KeyEvents.
- */
-private fun x11Keysym(code: Int): Int {
-    return if (code in 0x20..0x7E || code in 0xA0..0xFF) {
-        code
-    } else {
-        0x0100_0000 or code
     }
 }
 

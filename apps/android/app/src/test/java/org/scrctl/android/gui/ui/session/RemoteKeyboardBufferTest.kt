@@ -33,6 +33,12 @@ class RemoteKeyboardBufferTest {
             Snapshot.sendApplyNotifications()
             yield()
             assertEquals("Q7QQ".map(Char::code) + listOf(0x1F600, 0x1F600), sent)
+
+            sent.clear()
+            buffer.field.edit { insert(length, "+&\r\n\n") }
+            Snapshot.sendApplyNotifications()
+            yield()
+            assertEquals(listOf(0x2B, 0x26, KEY_RETURN, KEY_RETURN), sent.map(::x11Keysym))
         } finally {
             forward.cancelAndJoin()
         }
