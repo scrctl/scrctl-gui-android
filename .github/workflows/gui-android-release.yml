@@ -110,19 +110,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          main_ref="$(git ls-remote --exit-code origin refs/heads/main)"
-          if [[ "${main_ref%%$'\t'*}" != "$GITHUB_SHA" ]]; then
-            echo "A newer main commit is available. Skipping this snapshot."
-            exit 0
-          fi
-
           apk=ScrctlGui-snapshot-android.apk
           title="Development snapshot ${GITHUB_SHA:0:7}"
           notes="Signed Android build from \`$GITHUB_SHA\`."
-          if gh release view snapshot --json tagName >/dev/null 2>&1; then
-            previous_ref="$(git ls-remote --exit-code origin refs/tags/snapshot)"
-            previous_sha="${previous_ref%%$'\t'*}"
-            git push --force-with-lease="refs/tags/snapshot:$previous_sha" origin "$GITHUB_SHA:refs/tags/snapshot"
+          if published_sha="$(gh release view snapshot --json body --jq '.body | capture("^Signed Android build from `(?<sha>[0-9a-f]{40})`[.]").sha')"; then
+            if [[ ! "$published_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Cannot identify the source commit of the published Android snapshot." >&2
+              exit 1
+            fi
+            if ! git cat-file -e "$published_sha^{commit}" 2>/dev/null; then
+              git fetch origin "$published_sha"
+            fi
+            # Use the same commit count as the APK versionCode so delayed runs
+            # cannot replace an already published build with a downgrade.
+            if [[ "$published_sha" != "$GITHUB_SHA" ]] &&
+               (( $(git rev-list --count "$published_sha") >= $(git rev-list --count "$GITHUB_SHA") )); then
+              echo "A newer Android snapshot is already published."
+              exit 0
+            fi
+
+            # The fixed release serves existing updaters. Its APK and notes
+            # track successful builds, while the tag stays where it was created.
             gh release upload snapshot "$apk" --clobber
             gh release edit snapshot --title "$title" --notes "$notes" --prerelease
           else
