@@ -8,7 +8,7 @@ import org.scrctl.android.gui.data.QualityPreset
 import org.scrctl.android.gui.data.SshKey
 import kotlinx.coroutines.flow.Flow
 
-enum class MacSessionChoice { Personal, Share }
+enum class MacSessionChoice { Personal, Share, Guest }
 
 /**
  * Everything the UI needs from a remote session. Implementations may be fakes while
@@ -116,7 +116,12 @@ data class TransferEntry(
     val linkTarget: String?,
 )
 
-enum class CredentialChallenge { MissingUsername, MissingPassword, Rejected }
+enum class CredentialChallenge {
+    MissingUsername, MissingPassword, Rejected, MacCredentials, MacGuestRejected;
+
+    val offersMacGuestAccess: Boolean get() = this == MacCredentials || this == MacGuestRejected
+    val requiresUsername: Boolean get() = this == MissingUsername || offersMacGuestAccess
+}
 
 sealed interface SessionEvent {
     data object MacSessionChoiceRequired : SessionEvent

@@ -3526,7 +3526,8 @@ public object FfiConverterTypeTransferEntry: FfiConverterRustBuffer<TransferEntr
 enum class MacSessionTarget {
 
     PERSONAL,
-    SHARED;
+    SHARED,
+    GUEST;
 
 
 
@@ -4179,7 +4180,9 @@ enum class SessionFailureKind {
     SSH_TUNNEL,
     CLOSED,
     INVALID_INPUT,
-    MAC_SESSION_CHOICE_REQUIRED;
+    MAC_SESSION_CHOICE_REQUIRED,
+    MAC_CREDENTIALS_REQUIRED,
+    MAC_GUEST_REQUEST_FAILED;
 
     
 

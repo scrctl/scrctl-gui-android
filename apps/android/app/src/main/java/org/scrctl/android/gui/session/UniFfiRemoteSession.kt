@@ -206,6 +206,7 @@ internal class UniFfiRemoteSession(
         )
 
         val target = when {
+            macSessionChoice == MacSessionChoice.Guest -> MacSessionTarget.GUEST
             macSessionChoice == MacSessionChoice.Personal -> MacSessionTarget.PERSONAL
             macSessionChoice == MacSessionChoice.Share || connection.requestMacSharing -> MacSessionTarget.SHARED
             else -> null
@@ -1044,6 +1045,8 @@ internal class UniFfiRemoteSession(
 
     private fun failureEvent(kind: SessionFailureKind, reason: String): SessionEvent.Failed {
         val challenge = when (kind) {
+            SessionFailureKind.MAC_CREDENTIALS_REQUIRED -> CredentialChallenge.MacCredentials
+            SessionFailureKind.MAC_GUEST_REQUEST_FAILED -> CredentialChallenge.MacGuestRejected
             SessionFailureKind.MISSING_USERNAME -> CredentialChallenge.MissingUsername
             SessionFailureKind.MISSING_PASSWORD -> CredentialChallenge.MissingPassword
             SessionFailureKind.AUTHENTICATION_FAILED -> CredentialChallenge.Rejected
@@ -1056,6 +1059,8 @@ internal class UniFfiRemoteSession(
 
     private fun failureText(kind: SessionFailureKind, reason: String): String = when (kind) {
         SessionFailureKind.MAC_SESSION_CHOICE_REQUIRED -> context.getString(R.string.session_mac_choice_hint)
+        SessionFailureKind.MAC_CREDENTIALS_REQUIRED -> context.getString(R.string.session_auth_required)
+        SessionFailureKind.MAC_GUEST_REQUEST_FAILED -> context.getString(R.string.session_mac_guest_rejected)
         SessionFailureKind.UNKNOWN -> reason
         SessionFailureKind.NETWORK -> context.getString(R.string.session_failure_network)
         SessionFailureKind.CONNECTION_REFUSED ->

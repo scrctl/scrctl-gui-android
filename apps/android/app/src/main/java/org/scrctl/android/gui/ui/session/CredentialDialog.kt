@@ -37,9 +37,10 @@ internal fun CredentialDialog(
     initialUsername: String,
     initiallyRemember: Boolean,
     onCancel: () -> Unit,
+    onRequestPermission: () -> Unit,
     onSubmit: (String, String, Boolean) -> Unit,
 ) {
-    val requiresUsername = challenge == CredentialChallenge.MissingUsername
+    val requiresUsername = challenge.requiresUsername
     var showUsername by remember { mutableStateOf(requiresUsername || initialUsername.isNotEmpty()) }
     var username by remember { mutableStateOf(initialUsername) }
     var password by remember { mutableStateOf("") }
@@ -55,6 +56,14 @@ internal fun CredentialDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(endpoint)
+                if (challenge.offersMacGuestAccess) {
+                    TextButton(onClick = onRequestPermission) {
+                        Text(stringResource(R.string.session_mac_request_permission))
+                    }
+                }
+                if (challenge == CredentialChallenge.MacGuestRejected) {
+                    Text(stringResource(R.string.session_mac_guest_rejected), color = MaterialTheme.colorScheme.error)
+                }
                 if (challenge == CredentialChallenge.Rejected) {
                     Text(stringResource(R.string.session_auth_rejected), color = MaterialTheme.colorScheme.error)
                 }

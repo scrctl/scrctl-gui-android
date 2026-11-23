@@ -634,7 +634,7 @@ fun SessionScreen(
                     val unfinished = resetTransferProgress()
                     scope.launch { discardDownload(unfinished) }
                     login.failed(event.challenge)
-                    if (event.challenge == null) recovery.failed(event.reason, event.retryable)
+                    if (event.challenge == null) recovery.failed(event.reason, event.retryable && !login.usingGuestAccess)
                 }
             }
         }
@@ -731,7 +731,7 @@ fun SessionScreen(
                     foreground = true
                     val leftAt = backgroundedAt
                     backgroundedAt = 0L
-                    if (leftAt == 0L || isExiting || login.challenge != null || needsMacSessionChoice) return@LifecycleEventObserver
+                    if (leftAt == 0L || isExiting || login.challenge != null || needsMacSessionChoice || login.usingGuestAccess) return@LifecycleEventObserver
                     val away = SystemClock.elapsedRealtime() - leftAt
                     if (away >= RESUME_RECONNECT_MS && status == SessionStatus.Connected) {
                         status = SessionStatus.Connecting
@@ -750,6 +750,7 @@ fun SessionScreen(
     }
 
     fun retry(manual: Boolean) {
+        if (!manual && login.usingGuestAccess) return
         if (isExiting || !foreground || needsMacSessionChoice || login.challenge != null || !recovery.takeRetry(manual)) return
         status = SessionStatus.Connecting
         scope.launch { session.reconnect() }
@@ -798,6 +799,12 @@ fun SessionScreen(
             initialUsername = login.attempt.username,
             initiallyRemember = login.rememberLogin,
             onCancel = exitSession,
+            onRequestPermission = {
+                if (login.requestGuestAccess()) {
+                    status = SessionStatus.Connecting
+                    scope.launch { session.connect(MacSessionChoice.Guest) }
+                }
+            },
             onSubmit = { username, password, remember ->
                 login.retry(username, password, remember)
                 status = SessionStatus.Connecting

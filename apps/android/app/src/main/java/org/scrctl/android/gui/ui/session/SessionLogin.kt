@@ -11,6 +11,8 @@ import org.scrctl.android.gui.session.CredentialChallenge
 internal class SessionLogin(connection: Connection) {
     var attempt by mutableStateOf(connection)
         private set
+    var usingGuestAccess by mutableStateOf(false)
+        private set
     var generation by mutableIntStateOf(0)
         private set
     var rememberLogin by mutableStateOf(false)
@@ -25,11 +27,20 @@ internal class SessionLogin(connection: Connection) {
 
     fun retry(username: String, password: String, remember: Boolean) {
         val required = challenge ?: return
-        if (password.isEmpty() || (required == CredentialChallenge.MissingUsername && username.isBlank())) return
+        if (password.isEmpty() || (required.requiresUsername && username.isBlank())) return
         challenge = null
+        usingGuestAccess = false
         rememberLogin = remember
         attempt = attempt.copy(username = username.trim(), vncPassword = password)
         generation++
+    }
+
+    fun requestGuestAccess(): Boolean {
+        if (challenge?.offersMacGuestAccess != true) return false
+        challenge = null
+        usingGuestAccess = true
+        rememberLogin = false
+        return true
     }
 
     fun accepted(): Connection? {
