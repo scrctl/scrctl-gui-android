@@ -11,10 +11,27 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrackpadPanTest {
+    @Test
+    fun parallelTrackpadMovementToleratesFingerSpacingDrift() {
+        assertFalse(trackpadPinchDominates(Offset(0f, -40f), Offset(50f, 0f), Offset(70f, 8f), 8f))
+    }
+
+    @Test
+    fun trackpadPinchAcceptsOppositeMotionOrAStationaryAnchor() {
+        assertTrue(trackpadPinchDominates(Offset.Zero, Offset(50f, 0f), Offset(30f, 0f), 8f))
+        assertTrue(trackpadPinchDominates(Offset(10f, 0f), Offset(50f, 0f), Offset(70f, 0f), 8f))
+    }
+
+    @Test
+    fun trackpadPinchIgnoresSmallAbsoluteChangesEvenWithLargeZoomRatios() {
+        assertFalse(trackpadPinchDominates(Offset.Zero, Offset(12f, 0f), Offset(15f, 0f), 8f))
+    }
+
     @Test
     fun followsPointerUntilEachDesktopEdge() {
         val band = IntSize(400, 300)

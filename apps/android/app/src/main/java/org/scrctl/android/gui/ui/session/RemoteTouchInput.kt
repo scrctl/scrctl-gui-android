@@ -190,6 +190,7 @@ internal fun Modifier.remoteTouchInput(
         var multiTouchStartZoom = viewport.zoom
         var multiTouchStartPan = viewport.pan
         var multiTouchStartCentroid = Offset.Zero
+        var multiTouchStartSpan = Offset.Zero
         var multiTouchZoom = 1f
         var scrollAccum = Offset.Zero
         var threeFinger = false
@@ -501,6 +502,7 @@ internal fun Modifier.remoteTouchInput(
                     multiTouchStartZoom = viewport.zoom
                     multiTouchStartPan = viewport.pan
                     multiTouchStartCentroid = centroidNow
+                    multiTouchStartSpan = pressed[1].position - pressed[0].position
                     multiTouchZoom = 1f
                     scrollAccum = Offset.Zero
                     threeFinger = pressed.size >= 3
@@ -550,18 +552,22 @@ internal fun Modifier.remoteTouchInput(
                         if (zoomEnabled) {
                             multiTouchZoom *= event.calculateZoom()
                         }
-                        if (zoomEnabled &&
-                            abs(multiTouchZoom - 1f) > PINCH_ZOOM_EPSILON
-                        ) {
-                            // A pinch always wins over scrolling.
+                        val translation = centroidNow - multiTouchStartCentroid
+                        val canScroll = startedOnImage && translation.getDistance() > touchSlop * 2f
+                        val changedScale = zoomEnabled && abs(multiTouchZoom - 1f) > PINCH_ZOOM_EPSILON
+                        val canPinch = changedScale && (!centeredTrackpad || trackpadPinchDominates(
+                            translation,
+                            multiTouchStartSpan,
+                            pressed[1].position - pressed[0].position,
+                            touchSlop,
+                        ))
+                        if (canPinch) {
                             multiTouchMoved = true
                             multiTouchTapCandidate = false
                             holdTouches = 0
                             mode = GestureMode.Transform
                             applyPinch(centroidNow)
-                        } else if (startedOnImage && (centroidNow - multiTouchStartCentroid)
-                                .getDistance() > touchSlop * 2f
-                        ) {
+                        } else if (canScroll) {
                             multiTouchTapCandidate = false
                             holdTouches = 0
                             mode = GestureMode.Scroll
@@ -573,18 +579,16 @@ internal fun Modifier.remoteTouchInput(
 
                     GestureMode.Scroll -> {
                         val panChange = event.calculatePan()
-                        if (zoomEnabled) {
+                        if (!centeredTrackpad && zoomEnabled) {
                             multiTouchZoom *= event.calculateZoom()
-                        }
-                        if (zoomEnabled &&
-                            abs(multiTouchZoom - 1f) > PINCH_ZOOM_EPSILON
-                        ) {
-                            multiTouchMoved = true
-                            multiTouchTapCandidate = false
-                            mode = GestureMode.Transform
-                            applyPinch(centroidNow)
-                            event.changes.forEach { it.consume() }
-                            continue
+                            if (abs(multiTouchZoom - 1f) > PINCH_ZOOM_EPSILON) {
+                                multiTouchMoved = true
+                                multiTouchTapCandidate = false
+                                mode = GestureMode.Transform
+                                applyPinch(centroidNow)
+                                event.changes.forEach { it.consume() }
+                                continue
+                            }
                         }
 
                         scrollAccum += panChange
@@ -754,6 +758,19 @@ internal fun Modifier.remoteTouchInput(
             }
         }
     }
+}
+
+internal fun trackpadPinchDominates(
+    translation: Offset,
+    startSpan: Offset,
+    currentSpan: Offset,
+    touchSlop: Float,
+): Boolean {
+    val spanChange = abs(currentSpan.getDistance() - startSpan.getDistance())
+    // Same-direction finger motion moves the centroid farther than either
+    // finger moves relative to it. A stationary pinch anchor allows equality.
+    return spanChange > touchSlop &&
+        translation.getDistanceSquared() * 4f <= (currentSpan - startSpan).getDistanceSquared()
 }
 
 private const val PINCH_ZOOM_EPSILON = 0.08f
