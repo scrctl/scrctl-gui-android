@@ -82,7 +82,11 @@ internal fun BoxScope.RemoteSessionCanvas(
                 drawPath(outline, Color.White.copy(alpha = 0.08f), style = Stroke(1.dp.toPx()))
             }
         }
+        // Without a separate cursor shape, the framebuffer is authoritative.
+        // Some servers already draw their pointer there.
         if (!observing) {
+            val shape = cursorShape() ?: return@Canvas
+            val bitmap = shape.bitmap ?: return@Canvas
             val position = cursorPosition()
             val x = position?.x?.coerceIn(0, remoteWidth - 1)?.toFloat() ?: (remoteWidth * 0.5f)
             val y = position?.y?.coerceIn(0, remoteHeight - 1)?.toFloat() ?: (remoteHeight * 0.55f)
@@ -92,43 +96,20 @@ internal fun BoxScope.RemoteSessionCanvas(
                 Offset(origin.x + x * scaleX, origin.y + y * scaleY)
             }
             clipRect {
-                val shape = cursorShape()
-                val bitmap = shape?.bitmap
-                if (shape == null) {
-                    drawLocalCursor(pointer)
-                } else if (bitmap != null) {
-                    val scale = 24.dp.toPx() / maxOf(bitmap.width, bitmap.height)
-                    drawImage(
-                        image = bitmap.asImageBitmap(),
-                        dstOffset = IntOffset(
-                            (pointer.x - shape.hotspotX * scale).roundToInt(),
-                            (pointer.y - shape.hotspotY * scale).roundToInt(),
-                        ),
-                        dstSize = IntSize(
-                            (bitmap.width * scale).roundToInt().coerceAtLeast(1),
-                            (bitmap.height * scale).roundToInt().coerceAtLeast(1),
-                        ),
-                        filterQuality = FilterQuality.None,
-                    )
-                }
+                val scale = 24.dp.toPx() / maxOf(bitmap.width, bitmap.height)
+                drawImage(
+                    image = bitmap.asImageBitmap(),
+                    dstOffset = IntOffset(
+                        (pointer.x - shape.hotspotX * scale).roundToInt(),
+                        (pointer.y - shape.hotspotY * scale).roundToInt(),
+                    ),
+                    dstSize = IntSize(
+                        (bitmap.width * scale).roundToInt().coerceAtLeast(1),
+                        (bitmap.height * scale).roundToInt().coerceAtLeast(1),
+                    ),
+                    filterQuality = FilterQuality.None,
+                )
             }
         }
     }
-}
-
-/** Draws a fixed-size arrow whose tip is at the local input position. */
-private fun DrawScope.drawLocalCursor(tip: Offset) {
-    val unit = 1.dp.toPx()
-    val arrow = Path().apply {
-        moveTo(tip.x, tip.y)
-        lineTo(tip.x, tip.y + 18 * unit)
-        lineTo(tip.x + 4.5f * unit, tip.y + 14 * unit)
-        lineTo(tip.x + 8 * unit, tip.y + 20 * unit)
-        lineTo(tip.x + 11 * unit, tip.y + 18.5f * unit)
-        lineTo(tip.x + 7.5f * unit, tip.y + 12.5f * unit)
-        lineTo(tip.x + 14 * unit, tip.y + 12.5f * unit)
-        close()
-    }
-    drawPath(arrow, Color.White)
-    drawPath(arrow, Color.Black, style = Stroke(unit))
 }
