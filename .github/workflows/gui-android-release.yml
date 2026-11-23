@@ -80,17 +80,11 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          version_args=()
           if [[ "$IS_SNAPSHOT" == true ]]; then
             tag=snapshot
-          else
-            marketing="${tag#v}"
-            version_args+=("-Pscrctl.versionName=${marketing%%-*}")
           fi
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon \
-            -Pscrctl.versionCode="$(git rev-list --count HEAD)" \
-            "${version_args[@]}"
+          ./gradlew :app:assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk \
             "$GITHUB_WORKSPACE/ScrctlGui-${tag}-android.apk"
       - name: Publish signed Android release
@@ -111,6 +105,8 @@ jobs:
         run: |
           set -euo pipefail
           apk=ScrctlGui-snapshot-android.apk
+          version_code="$(git rev-list --count HEAD)"
+          asset="$apk#Android APK build $version_code"
           title="Development snapshot ${GITHUB_SHA:0:7}"
           notes="Signed Android build from \`$GITHUB_SHA\`."
           if published_sha="$(gh release view snapshot --json body --jq '.body | capture("^Signed Android build from `(?<sha>[0-9a-f]{40})`[.]").sha')"; then
@@ -131,9 +127,9 @@ jobs:
 
             # The fixed release serves existing updaters. Its APK and notes
             # track successful builds, while the tag stays where it was created.
-            gh release upload snapshot "$apk" --clobber
+            gh release upload snapshot "$asset" --clobber
             gh release edit snapshot --title "$title" --notes "$notes" --prerelease
           else
-            gh release create snapshot "$apk" --target "$GITHUB_SHA" \
+            gh release create snapshot "$asset" --target "$GITHUB_SHA" \
               --title "$title" --notes "$notes" --prerelease
           fi

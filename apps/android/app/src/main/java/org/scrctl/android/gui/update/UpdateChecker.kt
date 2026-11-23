@@ -33,6 +33,7 @@ class UpdateHttpException(val statusCode: Int) : IOException("GitHub returned HT
  */
 object UpdateChecker {
     private const val SNAPSHOT_TAG = "snapshot"
+    private const val APK_BUILD_LABEL = "Android APK build "
 
     const val RELEASES_URL =
         "https://api.github.com/repos/scrctl/scrctl-gui-android/releases?per_page=20"
@@ -41,11 +42,12 @@ object UpdateChecker {
         currentVersion: String,
         channel: UpdateChannel,
         installedSnapshot: String? = null,
+        currentVersionCode: Int,
     ): Result<UpdateCheck> = withContext(Dispatchers.IO) {
         runCatching {
             val body = fetch(RELEASES_URL)
                 ?: return@runCatching UpdateCheck.NoReleases
-            parse(body, currentVersion, channel, installedSnapshot)
+            parse(body, currentVersion, channel, installedSnapshot, currentVersionCode)
         }
     }
 
@@ -73,6 +75,7 @@ object UpdateChecker {
         currentVersion: String,
         channel: UpdateChannel,
         installedSnapshot: String?,
+        currentVersionCode: Int = 0,
     ): UpdateCheck {
         val releases = JSONArray(json)
         var selected: JSONObject? = null
@@ -107,6 +110,7 @@ object UpdateChecker {
         }
 
         var apkUrl: String? = null
+        var apkVersionCode: Int? = null
         val assets = root.optJSONArray("assets")
         if (assets != null) {
             for (index in 0 until assets.length()) {
@@ -115,8 +119,13 @@ object UpdateChecker {
                 val url = asset.optString("browser_download_url")
                 if (!name.endsWith(".apk") || !url.startsWith("https://")) continue
                 apkUrl = url
+                apkVersionCode = asset.optString("label").removePrefix(APK_BUILD_LABEL).toIntOrNull()
                 if (name.contains("android")) break
             }
+        }
+
+        if (channel == UpdateChannel.Snapshot && apkVersionCode != null && apkVersionCode <= currentVersionCode) {
+            return UpdateCheck.UpToDate
         }
 
         return UpdateCheck.Available(

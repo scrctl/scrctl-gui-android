@@ -17,14 +17,18 @@ val releaseKeystore = keystoreProperties.getProperty("storeFile")
     ?.let(rootProject::file)
     ?.takeIf { it.isFile }
 
-// `git describe --tags` yields the tag alone when HEAD is tagged and
-// "tag-<count>-g<hash>[-dirty]" afterwards, so release and snapshot builds are
-// distinguishable without touching the numeric version used by the updater.
-val buildVersion = runCatching {
+fun gitValue(vararg arguments: String): String? = runCatching {
     providers.exec {
-        commandLine("git", "describe", "--tags", "--always", "--dirty")
+        commandLine("git", *arguments)
     }.standardOutput.asText.get().trim()
-}.getOrNull().orEmpty().ifBlank { "dev" }
+}.getOrNull()?.takeIf { it.isNotEmpty() }
+
+// Only product tags describe app versions. The fixed snapshot tag names the update feed.
+val versionTag = gitValue("describe", "--tags", "--match", "v[0-9]*", "--abbrev=0")
+val versionOverride = providers.gradleProperty("scrctl.versionName").orNull
+val releaseVersion = versionOverride ?: versionTag?.removePrefix("v") ?: "0.1.0"
+val buildVersion = gitValue("describe", "--tags", "--match", "v[0-9]*", "--always") ?: releaseVersion
+val commitCount = gitValue("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
 
 val xdbEnabled = providers.gradleProperty("scrctl.xdb").map(String::toBoolean).getOrElse(false)
 val repositoryRoot = rootProject.file("../..")
@@ -49,9 +53,10 @@ android {
         targetSdk = 36
         versionCode = providers.gradleProperty("scrctl.versionCode")
             .map(String::toInt)
-            .getOrElse(1)
-        versionName = providers.gradleProperty("scrctl.versionName").getOrElse("0.1.0")
+            .getOrElse(commitCount)
+        versionName = versionOverride ?: if (versionTag == null) releaseVersion else buildVersion
         buildConfigField("String", "BUILD_VERSION", "\"$buildVersion\"")
+        buildConfigField("String", "RELEASE_VERSION", "\"$releaseVersion\"")
 
         ndk { abiFilters += rustAbis }
     }

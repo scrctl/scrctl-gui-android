@@ -286,6 +286,8 @@
     <string name="settings_update_failed">Couldn’t check for updates: %1$s</string>
     <string name="settings_download_failed">Download failed: %1$s</string>
     <string name="settings_update_http_error">GitHub returned HTTP %1$d.</string>
+    <string name="settings_update_older_apk">Build %1$d is older than the installed build %2$d.</string>
+    <string name="settings_update_invalid_apk">This file is not a valid Scrctl update.</string>
     <string name="settings_download_http_error">Download failed with HTTP %1$d.</string>
     <string name="settings_update_no_asset">This release has no APK asset.</string>
     <string name="settings_update_note">The APK must be signed with the same key as this installation.</string>

@@ -98,6 +98,21 @@ class UpdateCheckerTest {
     }
 
     @Test
+    fun snapshot_skips_apks_at_or_below_the_installed_version_code() {
+        val snapshot = release("snapshot")
+        snapshot.getJSONArray("assets").getJSONObject(0).put("label", "Android APK build 78")
+        val body = json(snapshot)
+
+        for (installed in listOf(78, 80)) {
+            assertEquals(
+                UpdateCheck.UpToDate,
+                UpdateChecker.parse(body, "0.1.0", UpdateChannel.Snapshot, null, installed),
+            )
+        }
+        assertTrue(UpdateChecker.parse(body, "0.1.0", UpdateChannel.Snapshot, null, 77) is UpdateCheck.Available)
+    }
+
+    @Test
     fun up_to_date_and_missing_channels() {
         val body = json(release("v0.1.0"))
         assertEquals(

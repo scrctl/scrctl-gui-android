@@ -284,6 +284,8 @@
     <string name="settings_update_failed">检查更新失败：%1$s</string>
     <string name="settings_download_failed">下载失败：%1$s</string>
     <string name="settings_update_http_error">GitHub 返回 HTTP %1$d。</string>
+    <string name="settings_update_older_apk">下载的构建 %1$d 早于已安装的构建 %2$d。</string>
+    <string name="settings_update_invalid_apk">此文件不是有效的 Scrctl 更新包。</string>
     <string name="settings_download_http_error">下载失败：HTTP %1$d。</string>
     <string name="settings_update_no_asset">该版本没有 APK 资源。</string>
     <string name="settings_update_note">APK 必须与此安装使用相同的密钥签名。</string>

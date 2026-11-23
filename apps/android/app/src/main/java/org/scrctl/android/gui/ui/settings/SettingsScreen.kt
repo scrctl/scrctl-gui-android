@@ -66,6 +66,8 @@ import org.scrctl.android.gui.ui.theme.ThemedSystemBarIcons
 import org.scrctl.android.gui.update.ApkUpdater
 import org.scrctl.android.gui.update.UpdateCheck
 import org.scrctl.android.gui.update.UpdateChecker
+import org.scrctl.android.gui.update.InvalidUpdateApk
+import org.scrctl.android.gui.update.OlderUpdateApk
 import org.scrctl.android.gui.update.UpdateDownloadHttpException
 import org.scrctl.android.gui.update.UpdateHttpException
 import org.scrctl.android.gui.update.UpdateInfo
@@ -106,9 +108,10 @@ fun SettingsScreen(
         updateState = UpdateUiState.Checking
         scope.launch {
             updateState = UpdateChecker.check(
-                BuildConfig.VERSION_NAME,
+                BuildConfig.RELEASE_VERSION,
                 updateChannel,
                 updateStore.installedSnapshot(),
+                currentVersionCode = BuildConfig.VERSION_CODE,
             ).fold(
                 onSuccess = { result ->
                     when (result) {
@@ -504,6 +507,12 @@ private fun updateStatusText(state: UpdateUiState): String = when (state) {
 
 @Composable
 private fun failureText(error: Throwable, duringDownload: Boolean): String {
+    if (error is OlderUpdateApk) {
+        return stringResource(R.string.settings_update_older_apk, error.candidate, error.installed)
+    }
+    if (error is InvalidUpdateApk) {
+        return stringResource(R.string.settings_update_invalid_apk)
+    }
     val httpError = error as? UpdateDownloadHttpException
     if (duringDownload && httpError != null) {
         return stringResource(R.string.settings_download_http_error, httpError.statusCode)
