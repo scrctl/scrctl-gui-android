@@ -90,7 +90,8 @@ internal fun Modifier.remoteTouchInput(
     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis.toLong()
     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
     val doubleTapSlop = max(40.dp.toPx(), touchSlop * 2.5f)
-    val wheelStep = WHEEL_STEP_PX
+    // Match the iOS distance per wheel tick across display densities.
+    val wheelStep = 24.dp.toPx()
     val screenSize = size
 
     fun trackpadTarget(): Pair<Int, Int> =
@@ -776,7 +777,6 @@ internal fun trackpadPinchDominates(
 private const val PINCH_ZOOM_EPSILON = 0.08f
 private const val TAP_TIMEOUT_MS = 500L
 private const val DOUBLE_TAP_CLICK_MARGIN_MS = 32L
-private const val WHEEL_STEP_PX = 40f
 private const val MAX_WHEEL_STEPS_PER_EVENT = 4
 private const val WHEEL_UP = 1 shl 3
 private const val WHEEL_DOWN = 1 shl 4
