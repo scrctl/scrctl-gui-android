@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Monitor
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhoneIphone
 import androidx.compose.material.icons.outlined.Search
@@ -1527,6 +1528,7 @@ private fun EmptyLibrary(onAddConnection: () -> Unit, modifier: Modifier = Modif
 private fun GuestMenuItem(onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(stringResource(R.string.library_mac_connect_as_guest)) },
+        leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
         onClick = onClick,
     )
 }
