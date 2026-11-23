@@ -80,17 +80,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          version_tag="$tag"
+          version_args=()
           if [[ "$IS_SNAPSHOT" == true ]]; then
             tag=snapshot
-            version_tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0)"
+          else
+            marketing="${tag#v}"
+            version_args+=("-Pscrctl.versionName=${marketing%%-*}")
           fi
-          marketing="${version_tag#v}"
-          marketing="${marketing%%-*}"
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon \
             -Pscrctl.versionCode="$(git rev-list --count HEAD)" \
-            -Pscrctl.versionName="$marketing"
+            "${version_args[@]}"
           cp app/build/outputs/apk/release/app-release.apk \
             "$GITHUB_WORKSPACE/ScrctlGui-${tag}-android.apk"
       - name: Publish signed Android release
