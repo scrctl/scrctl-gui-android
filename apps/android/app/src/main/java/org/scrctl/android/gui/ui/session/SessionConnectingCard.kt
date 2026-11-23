@@ -21,10 +21,16 @@ import org.scrctl.android.gui.R
 @Composable
 internal fun SessionConnectingCard(
     connected: Boolean,
+    requestingMacPermission: Boolean,
     endpoint: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val title = when {
+        connected -> R.string.session_waiting_title
+        requestingMacPermission -> R.string.session_mac_permission_pending
+        else -> R.string.session_status_connecting
+    }
     Surface(
         modifier = modifier.padding(16.dp).widthIn(max = 320.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -37,7 +43,7 @@ internal fun SessionConnectingCard(
         ) {
             CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
             Text(
-                stringResource(if (connected) R.string.session_waiting_title else R.string.session_status_connecting),
+                stringResource(title),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
             )
@@ -47,6 +53,14 @@ internal fun SessionConnectingCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
+            if (requestingMacPermission && !connected) {
+                Text(
+                    stringResource(R.string.session_mac_permission_approve),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             OutlinedButton(onClick = onCancel) {
                 Text(stringResource(R.string.library_cancel))
             }

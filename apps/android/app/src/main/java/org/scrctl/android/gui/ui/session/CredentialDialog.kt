@@ -3,6 +3,7 @@ package org.scrctl.android.gui.ui.session
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
@@ -10,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -56,11 +58,6 @@ internal fun CredentialDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(endpoint)
-                if (challenge.offersMacGuestAccess) {
-                    TextButton(onClick = onRequestPermission) {
-                        Text(stringResource(R.string.session_mac_request_permission))
-                    }
-                }
                 if (challenge == CredentialChallenge.MacGuestRejected) {
                     Text(stringResource(R.string.session_mac_guest_rejected), color = MaterialTheme.colorScheme.error)
                 }
@@ -90,6 +87,24 @@ internal fun CredentialDialog(
                 ) {
                     Checkbox(checked = rememberLogin, onCheckedChange = null)
                     Text(stringResource(R.string.session_remember_credentials))
+                }
+                if (challenge.offersMacGuestAccess) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                        Text(
+                            text = stringResource(R.string.session_auth_alternative),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                    }
+                    TextButton(onClick = onRequestPermission, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.session_mac_request_permission))
+                    }
                 }
             }
         },

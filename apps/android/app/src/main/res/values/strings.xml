@@ -367,7 +367,10 @@
     <string name="session_toolbar_move_down">Move Down</string>
     <string name="session_toolbar_add">Add to Toolbar</string>
     <string name="session_toolbar_remove">Move to More</string>
+    <string name="session_auth_alternative">Or</string>
     <string name="session_mac_request_permission">Ask for Permission</string>
+    <string name="session_mac_permission_pending">Requesting Permission…</string>
+    <string name="session_mac_permission_approve">Approve the screen sharing request on the Mac.</string>
     <string name="session_mac_guest_rejected">The Mac did not grant screen sharing permission.</string>
     <string name="library_mac_connect_as_guest">Ask to Share as Guest (Mac)</string>
 </resources>

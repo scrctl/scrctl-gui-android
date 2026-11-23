@@ -1012,6 +1012,7 @@ fun SessionScreen(
         if (waitingForScreen && login.challenge == null && !isExiting) {
             SessionConnectingCard(
                 connected = status == SessionStatus.Connected,
+                requestingMacPermission = login.usingGuestAccess,
                 endpoint = connection.address,
                 onCancel = exitSession,
                 modifier = Modifier.align(Alignment.Center),

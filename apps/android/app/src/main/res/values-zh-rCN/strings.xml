@@ -365,7 +365,10 @@
     <string name="session_toolbar_move_down">下移</string>
     <string name="session_toolbar_add">添加到工具栏</string>
     <string name="session_toolbar_remove">移到更多菜单</string>
+    <string name="session_auth_alternative">或</string>
     <string name="session_mac_request_permission">请求许可</string>
+    <string name="session_mac_permission_pending">正在请求许可…</string>
+    <string name="session_mac_permission_approve">请在 Mac 上批准屏幕共享请求。</string>
     <string name="session_mac_guest_rejected">Mac 未允许屏幕共享请求。</string>
     <string name="library_mac_connect_as_guest">以访客身份请求共享（Mac）</string>
 </resources>
