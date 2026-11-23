@@ -186,7 +186,7 @@ internal fun Modifier.remoteTouchInput(
         var tapEndedAt = downTime
 
         // Two-finger state: a pinch is anchored at the touch
-        // centroid, a drag scrolls at 1x and pans when zoomed.
+        // centroid. The centered trackpad scrolls at every zoom level.
         var multiTouchStartZoom = viewport.zoom
         var multiTouchStartPan = viewport.pan
         var multiTouchStartCentroid = Offset.Zero
@@ -493,7 +493,7 @@ internal fun Modifier.remoteTouchInput(
                         trackPointer(last.first, last.second)
                     }
                     multiTouchTapCandidate = startedOnImage && mode == GestureMode.Pending
-                    mode = if (zoomEnabled && viewport.zoom > minimumZoom * ZOOM_ACTIVE_EPSILON) {
+                    mode = if (!centeredTrackpad && zoomEnabled && viewport.zoom > minimumZoom * ZOOM_ACTIVE_EPSILON) {
                         GestureMode.Transform
                     } else {
                         GestureMode.TwoFinger
