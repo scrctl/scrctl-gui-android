@@ -188,6 +188,7 @@
     <string name="session_download_progress_fallback">下载</string>
     <string name="session_error_ssh_key_missing">找不到此连接使用的 SSH 密钥，请在连接设置中选择密钥。</string>
     <string name="session_error_no_framebuffer">服务器未报告帧缓冲区尺寸。</string>
+    <string name="session_error_no_picture">远程电脑未发送画面。</string>
     <string name="session_error_out_of_memory">内存不足，无法显示 %1$d×%2$d。</string>
     <string name="session_error_out_of_memory_viewport">内存不足，无法显示可见屏幕区域。</string>
     <string name="session_failure_network">网络错误，连接已中断。</string>

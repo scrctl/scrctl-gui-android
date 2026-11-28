@@ -28,6 +28,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -656,12 +657,46 @@ internal class UniFfiRemoteSession(
 
     private suspend fun poll(connected: NativeSession) {
         var terminal: SessionEvent = SessionEvent.Disconnected()
+        var waitingForFirstFrame = true
+        val deadline = SystemClock.elapsedRealtime() + FIRST_FRAME_TIMEOUT_MS
+        val refresh = scope.launch {
+            delay(FIRST_FRAME_REFRESH_MS)
+            try {
+                connected.requestRefresh()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.w(TAG, "initial framebuffer refresh failed", error)
+            }
+        }
         try {
             while (true) {
-                val event = connected.nextEvent() ?: break
+                val event = if (waitingForFirstFrame) {
+                    // A null event denotes EOF. Keep it distinct from a timed-out read.
+                    var nextEvent: NativeEvent? = null
+                    val remaining = deadline - SystemClock.elapsedRealtime()
+                    val read = withTimeoutOrNull(remaining) {
+                        nextEvent = connected.nextEvent()
+                        true
+                    }
+                    if (read == null) {
+                        terminal = SessionEvent.Failed(context.getString(R.string.session_error_no_picture))
+                        refresh.cancel()
+                        connected.disconnect()
+                        break
+                    }
+                    nextEvent
+                } else {
+                    connected.nextEvent()
+                } ?: break
                 when (event) {
                     is NativeEvent.Connected -> applySize(event.width.toInt(), event.height.toInt())
-                    is NativeEvent.Frame -> renderFrame(connected, event)
+                    is NativeEvent.Frame -> {
+                        val rendered = renderFrame(connected, event)
+                        if (waitingForFirstFrame && rendered) {
+                            waitingForFirstFrame = false
+                            refresh.cancel()
+                        }
+                    }
                     is NativeEvent.Resized -> applySize(event.width.toInt(), event.height.toInt())
                     is NativeEvent.DesktopLayout -> {
                         val layout = SessionEvent.DesktopLayout(
@@ -750,6 +785,8 @@ internal class UniFfiRemoteSession(
                 _events.emit(failureEvent(error))
             }
             return
+        } finally {
+            refresh.cancel()
         }
         if (!disposed.get()) {
             checkpointPreview()
@@ -828,14 +865,13 @@ internal class UniFfiRemoteSession(
         return true
     }
 
-    private suspend fun renderFrame(connected: NativeSession, event: NativeEvent.Frame) {
+    private suspend fun renderFrame(connected: NativeSession, event: NativeEvent.Frame): Boolean =
         frameMutex.withLock {
             if (!previewSwitchingDisplay && previewFrameGeneration != previewDisplayGeneration.get()) {
                 resetPreviewCoverage()
             }
             renderFrameLocked(connected, event)
         }
-    }
 
     private fun resetPreviewCoverage() {
         previewCoverage = if (previews != null && viewportWidth > 0 && viewportHeight > 0) {
@@ -889,14 +925,14 @@ internal class UniFfiRemoteSession(
         previewCapturedAt = now
     }
 
-    private suspend fun renderFrameLocked(connected: NativeSession, event: NativeEvent.Frame) {
-        val target = back ?: front ?: return
+    private suspend fun renderFrameLocked(connected: NativeSession, event: NativeEvent.Frame): Boolean {
+        val target = back ?: front ?: return false
         val scale = displayScale.coerceAtLeast(1)
         // The poller rotates buffers, so the target starts as the previous frame;
         // otherwise incremental updates would be painted on a stale (often black)
         // bitmap. An update that covers the whole viewport, or the first paint of
         // a new viewport, skips the copy.
-        if (event.rects.isEmpty()) return
+        if (event.rects.isEmpty()) return false
         val needsBaseline = !viewportEmitted
         val rectangles = if (needsBaseline) {
             listOf(rect(viewportX, viewportY, viewportWidth, viewportHeight))
@@ -965,11 +1001,11 @@ internal class UniFfiRemoteSession(
                         wrote = true
                     }
                 }
-                if (needsBaseline && !paintedBand) return
+                if (needsBaseline && !paintedBand) return false
                 bandTop = bandBottom
             }
         }
-        if (!wrote) return
+        if (!wrote) return false
         finishPreviewFrame(target)
 
         viewportEmitted = true
@@ -983,6 +1019,7 @@ internal class UniFfiRemoteSession(
                 SessionEvent.Viewport(viewportX, viewportY, viewportWidth, viewportHeight, scale),
             ),
         )
+        return true
     }
 
     private fun finishPreviewFrame(bitmap: Bitmap) {
@@ -1093,6 +1130,8 @@ internal class UniFfiRemoteSession(
         const val MAX_DISPLAY_SCALE = 16
         const val MAX_SCRATCH_PIXELS = 1_000_000
         const val PREVIEW_INTERVAL_MS = 10_000L
+        const val FIRST_FRAME_REFRESH_MS = 5_000L
+        const val FIRST_FRAME_TIMEOUT_MS = 45_000L
     }
 }
 
